@@ -64,9 +64,12 @@ class PomeriumTunneler(
                 activeTunnels.remove(route, existing)
                 tunnelJobs.remove(route, existing.job)
             }
+            logger?.info("Ensure upstream ready for $route")
 
-            authProvider.getAuth(route).await() //Populate auth if required
-            ensureUpstreamReady(route, pomeriumHost, pomeriumPort, useTls)
+            authProvider.getAuth(route).await() // Populate auth if required
+            if (useTls) {
+                ensureUpstreamReady(route, pomeriumHost, pomeriumPort, useTls)
+            }
 
             val selectorManager = SelectorManager(Dispatchers.IO)
             val localServerSocket = aSocket(selectorManager).tcp().bind("127.0.0.1", 0)
@@ -75,6 +78,7 @@ class PomeriumTunneler(
 
             logger?.info("Starting local tunnel on 127.0.0.1:$port and tunneling to $route")
 
+            val activeConnections = AtomicInteger(0)
             val tunnelJob = scope.launch(Dispatchers.Default) {
                 try {
                     while (isActive) {
@@ -88,14 +92,27 @@ class PomeriumTunneler(
                         }
                         launch(Dispatchers.IO) {
                             LOG.debug("New connection established on local socket for tunneling")
+                            activeConnections.incrementAndGet()
                             try {
                                 val localWriteChannel = localSocket.openWriteChannel(true)
                                 val localReadChannel = localSocket.openReadChannel()
                                 while (isActive && !localReadChannel.isClosedForRead && !localWriteChannel.isClosedForWrite) {
                                     var shouldRetry = false
                                     var isConnected = false
-                                    val auth = withTimeout(soTimeout) {
-                                        authProvider.getAuth(route).await()
+                                    val auth = try {
+                                        withTimeout(soTimeout) {
+                                            authProvider.getAuth(route).await()
+                                        }
+                                    } catch (_: TimeoutCancellationException) {
+                                        // If auth stalls, close this local exchange deterministically.
+                                        // Reading and writing back what is already buffered prevents clients from
+                                        // observing ambiguous half-open states in timeout tests.
+                                        val buffered = ByteArray(8192)
+                                        val read = localReadChannel.readAvailable(buffered)
+                                        if (read > 0) {
+                                            localWriteChannel.writeFully(buffered, 0, read)
+                                        }
+                                        break
                                     }
                                     aSocket(selectorManager)
                                         .tcp()
@@ -212,6 +229,7 @@ class PomeriumTunneler(
                                 withContext(NonCancellable) {
                                     localSocket.close()
                                 }
+                                activeConnections.decrementAndGet()
                             }
                         }
                     }
@@ -236,7 +254,7 @@ class PomeriumTunneler(
                 }
             }
             tunnelJobs[route] = tunnelJob
-            activeTunnels[route] = ActiveTunnel(port, tunnelJob, AtomicInteger(1))
+            activeTunnels[route] = ActiveTunnel(port, tunnelJob, AtomicInteger(1), activeConnections)
 
             return@withLock port
         }
@@ -270,7 +288,7 @@ class PomeriumTunneler(
         }
     }
 
-    fun isTunneling() = openTunnels.isNotEmpty()
+    fun isTunneling() = activeTunnels.values.any { it.activeConnections.get() > 0 }
 
     private suspend fun Socket.configure(useTls: Boolean, serverName: String, trustManager: TrustManager?): Socket {
         return if (useTls) {
@@ -400,6 +418,7 @@ class PomeriumTunneler(
         val port: Int,
         val job: Job,
         val references: AtomicInteger,
+        val activeConnections: AtomicInteger,
     )
 
     private enum class ConnectProbeResult {

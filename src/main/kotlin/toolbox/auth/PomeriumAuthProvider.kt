@@ -22,6 +22,7 @@ import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
@@ -43,7 +44,6 @@ class PomeriumAuthProvider(
     private val routeToMutexMap = ConcurrentHashMap<URI, Mutex>()
     private val credKeyToAuthJobMap = ConcurrentHashMap<CredentialKey, Deferred<String>>()
     private val routeToCredKeyMap = ConcurrentHashMap<URI, CredentialKey>()
-    private val originToCredKeyMap = ConcurrentHashMap<String, CredentialKey>()
     private val existingRoutes = Collections.newSetFromMap(ConcurrentHashMap<URI, Boolean>())
 
     private val secureClient = HttpClient(OkHttp) {
@@ -94,21 +94,6 @@ class PomeriumAuthProvider(
                     }
                 }
             }
-            val originCacheKey = getOriginCacheKey(route, pomeriumPort)
-            originToCredKeyMap[originCacheKey]?.let { credKey ->
-                credKeyToMutexMap.computeIfAbsent(credKey) { Mutex() }.withLock {
-                    credentialStore[credKey]?.let { auth ->
-                        routeToCredKeyMap[route] = credKey
-                        return@withContext CompletableDeferred(auth)
-                    }
-                    credKeyToAuthJobMap[credKey]?.let { job ->
-                        routeToCredKeyMap[route] = credKey
-                        LOG.debug("Existing auth job found in cache by route origin, reusing job")
-                        return@withContext job
-                    }
-                }
-            }
-
             // Serialize bootstrap requests for the same route to avoid spawning
             // multiple callback servers and login requests in parallel.
             routeToMutexMap.computeIfAbsent(route) { Mutex() }.withLock {
@@ -131,7 +116,6 @@ class PomeriumAuthProvider(
 
                 val authLink = getAuthLink(route, pomeriumPort, serverPort)
                 val credString = getCredString(authLink)
-                originToCredKeyMap[originCacheKey] = credString
                 return@withLock credKeyToMutexMap.computeIfAbsent(credString) { Mutex() }.withLock {
                     credentialStore[credString]?.let { auth ->
                         callbackServer.close()
@@ -161,7 +145,14 @@ class PomeriumAuthProvider(
                         }
                     }
                     credKeyToAuthJobMap[credString] = getToken
-                    linkHandler.handleAuthLink({ authLink }, isNewRoute)
+                    val linkRequested = AtomicBoolean(false)
+                    linkHandler.handleAuthLink({
+                        linkRequested.set(true)
+                        runBlocking { getAuthLink(route, pomeriumPort, serverPort) }
+                    }, isNewRoute)
+                    if (!linkRequested.get() && linkHandler::class.simpleName != "NoOpAuthLinkHandler") {
+                        getToken.cancel()
+                    }
                     return@withLock getToken
                 }
             }
@@ -195,13 +186,6 @@ class PomeriumAuthProvider(
 
     private fun isLocalhost(host: String?): Boolean =
         host == "localhost" || host == "127.0.0.1" || host == "::1"
-
-    private fun getOriginCacheKey(route: URI, pomeriumPort: Int): String {
-        val scheme = if (route.scheme.equals("https", ignoreCase = true) || pomeriumPort == 443) "https" else "http"
-        val host = route.host ?: "unknown"
-        return "$scheme://$host:$pomeriumPort"
-    }
-
 
     companion object {
         const val POMERIUM_LOGIN_ENDPOINT = "/.pomerium/api/v1/login"

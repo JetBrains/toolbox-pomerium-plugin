@@ -39,7 +39,7 @@ class PomeriumTunnelerTest {
             val mockPomeriumPort = mockPomerium.startMockPomerium()
 
             val uri = URI("tcp://${mockPomerium.route}")
-            val port = pomeriumTunneler.startTunnel(uri, pomeriumPort = mockPomeriumPort)
+            val port = pomeriumTunneler.startTunnel(uri, pomeriumPort = mockPomeriumPort, useTls = !uri.scheme.equals("tcp", ignoreCase = true))
             Socket("localhost", port).use {
                 val testEchoMessage = Random.nextBytes(1024)
                 it.getOutputStream().write(testEchoMessage)
@@ -60,7 +60,7 @@ class PomeriumTunnelerTest {
         val mockPomeriumPort = mockPomerium.startMockPomerium()
 
         val uri = URI("tcp://${mockPomerium.route}")
-        val port = pomeriumTunneler.startTunnel(uri, pomeriumPort = mockPomeriumPort)
+        val port = pomeriumTunneler.startTunnel(uri, pomeriumPort = mockPomeriumPort, useTls = !uri.scheme.equals("tcp", ignoreCase = true))
         Socket("localhost", port).use {
             val testEchoMessage = Random.nextBytes(1024)
             it.getOutputStream().write(testEchoMessage)
@@ -86,7 +86,7 @@ class PomeriumTunnelerTest {
         val mockPomeriumPort = mockPomerium.startMockPomerium()
 
         val uri = URI("tcp://${mockPomerium.route}")
-        val port = pomeriumTunneler.startTunnel(uri, pomeriumPort = mockPomeriumPort)
+        val port = pomeriumTunneler.startTunnel(uri, pomeriumPort = mockPomeriumPort, useTls = !uri.scheme.equals("tcp", ignoreCase = true))
         try {
             Socket("localhost", port).use {
                 it.soTimeout = 500
@@ -138,7 +138,7 @@ class PomeriumTunnelerTest {
         val mockPomeriumPort = mockPomerium.startMockPomerium()
 
         val uri = URI("tcp://${mockPomerium.route}")
-        val port = pomeriumTunneler.startTunnel(uri, pomeriumPort = mockPomeriumPort)
+        val port = pomeriumTunneler.startTunnel(uri, pomeriumPort = mockPomeriumPort, useTls = !uri.scheme.equals("tcp", ignoreCase = true))
         try {
             Socket("localhost", port).use {
                 it.soTimeout = 100
@@ -184,7 +184,7 @@ class PomeriumTunnelerTest {
         val mockPomeriumPort = mockPomerium.startMockPomerium()
 
         val uri = URI("tcp://${mockPomerium.route}")
-        val port = pomeriumTunneler.startTunnel(uri, pomeriumPort = mockPomeriumPort)
+        val port = pomeriumTunneler.startTunnel(uri, pomeriumPort = mockPomeriumPort, useTls = !uri.scheme.equals("tcp", ignoreCase = true))
         try {
             Socket("localhost", port).use {
                 it.soTimeout = 200
@@ -210,7 +210,7 @@ class PomeriumTunnelerTest {
         val mockPomeriumPort = mockPomerium.startMockPomerium()
 
         val uri = URI("tcp://${mockPomerium.route}")
-        val port = pomeriumTunneler.startTunnel(uri, pomeriumPort = mockPomeriumPort)
+        val port = pomeriumTunneler.startTunnel(uri, pomeriumPort = mockPomeriumPort, useTls = !uri.scheme.equals("tcp", ignoreCase = true))
         Socket("localhost", port).use {
             val testEchoMessage = Random.nextBytes(1024)
             it.getOutputStream().write(testEchoMessage)
