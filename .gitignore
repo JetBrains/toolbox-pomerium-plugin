@@ -23,3 +23,12 @@ build-logic/.gradle
 **/.DS_Store
 
 toolbox-plugin.properties
+
+# Helpers local secrets and generated config
+helpers/state/link-helper.defaults.real.env
+helpers/state/remote-instance.env
+helpers/state/pomerium-real.local.env
+helpers/state/.cache/
+helpers/pomerium/real/config.yaml
+helpers/pomerium/real/certs/*.pem
+!helpers/pomerium/real/certs/.gitkeep
