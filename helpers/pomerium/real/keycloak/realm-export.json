@@ -1,0 +1,48 @@
+{
+  "realm": "Pomerium",
+  "enabled": true,
+  "displayName": "Pomerium Local Dev",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "users": [
+    {
+      "username": "dev",
+      "enabled": true,
+      "email": "dev@example.com",
+      "emailVerified": true,
+      "firstName": "Dev",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "dev",
+          "temporary": false
+        }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "toolbox-pomerium-local",
+      "name": "Toolbox Pomerium Local",
+      "protocol": "openid-connect",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "toolbox-pomerium-local-secret",
+      "redirectUris": [
+        "https://authenticate.localhost/oauth2/callback",
+        "https://authenticate.localhost.pomerium.io/oauth2/callback"
+      ],
+      "webOrigins": [
+        "https://authenticate.localhost",
+        "https://authenticate.localhost.pomerium.io"
+      ],
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false
+    }
+  ]
+}

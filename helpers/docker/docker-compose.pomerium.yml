@@ -1,0 +1,65 @@
+services:
+  helpers-upstream:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: helpers-upstream:latest
+    volumes:
+      - ../state/link-helper.defaults.real.env:/opt/helpers/state/link-helper.defaults.real.env:ro
+    ports:
+      - "2223:22"
+      - "5990:5990"
+      - "44000:44000"
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:22.0.1
+    command:
+      - start-dev
+      - --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "${KEYCLOAK_PUBLIC_PORT:-8080}:8080"
+    volumes:
+      - ../pomerium/real/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    networks:
+      default:
+        aliases:
+          - keycloak.localhost
+          - keycloak.localhost.pomerium.io
+
+  verify:
+    image: pomerium/verify:latest
+    environment:
+      JWKS_ENDPOINT: https://verify.localhost/.well-known/pomerium/jwks.json
+      SSL_CERT_FILE: /etc/ssl/certs/mkcert-rootCA.pem
+    expose:
+      - "8000"
+    volumes:
+      - ../pomerium/real/certs/mkcert-rootCA.pem:/etc/ssl/certs/mkcert-rootCA.pem:ro
+
+  real-pomerium:
+    image: pomerium/pomerium:v0.32.2
+    command:
+      - --config=/pomerium/config.yaml
+    depends_on:
+      - keycloak
+      - verify
+      - helpers-upstream
+    ports:
+      - "${POMERIUM_PUBLIC_PORT:-443}:443"
+    volumes:
+      - ../pomerium/real/config.yaml:/pomerium/config.yaml:ro
+      - ../pomerium/real/certs:/pomerium/certs:ro
+    networks:
+      default:
+        aliases:
+          - authenticate.localhost
+          - verify.localhost
+          - backend.localhost
+          - agent.localhost
+          - authenticate.localhost.pomerium.io
+          - verify.localhost.pomerium.io
+          - backend.localhost.pomerium.io
+          - agent.localhost.pomerium.io

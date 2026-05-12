@@ -1,0 +1,47 @@
+authenticate_service_url: https://authenticate.localhost
+
+shared_secret: ${POMERIUM_SHARED_SECRET}
+cookie_secret: ${POMERIUM_COOKIE_SECRET}
+signing_key: ${POMERIUM_SIGNING_KEY}
+
+certificate_file: /pomerium/certs/localhost.pomerium.io.pem
+certificate_key_file: /pomerium/certs/localhost.pomerium.io-key.pem
+
+idp_provider: oidc
+idp_client_id: toolbox-pomerium-local
+idp_client_secret: ${POMERIUM_IDP_CLIENT_SECRET}
+idp_provider_url: http://keycloak.localhost:8080/realms/Pomerium
+idp_scopes:
+  - openid
+  - profile
+  - email
+
+programmatic_redirect_domain_whitelist:
+  - localhost
+
+routes:
+  - from: https://verify.localhost
+    to: http://verify:8000
+    allow_any_authenticated_user: true
+    pass_identity_headers: true
+
+  - from: https://verify.localhost.pomerium.io
+    to: http://verify:8000
+    allow_any_authenticated_user: true
+    pass_identity_headers: true
+
+  - from: tcp+https://backend.localhost:443
+    to: tcp://helpers-upstream:5990
+    allow_any_authenticated_user: true
+
+  - from: tcp+https://backend.localhost.pomerium.io:443
+    to: tcp://helpers-upstream:5990
+    allow_any_authenticated_user: true
+
+  - from: tcp+https://agent.localhost:443
+    to: tcp://helpers-upstream:44000
+    allow_any_authenticated_user: true
+
+  - from: tcp+https://agent.localhost.pomerium.io:443
+    to: tcp://helpers-upstream:44000
+    allow_any_authenticated_user: true
