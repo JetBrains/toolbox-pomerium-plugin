@@ -23,7 +23,27 @@ plugins {
 }
 
 group = "toolbox.pomerium.plugin"
-version = "1.0.0"
+
+// Auto-bump patch on every build invocation so Toolbox always sees a newer version after rebuild.
+// Counter is persisted in .gradle/ (gitignored) and only advances when an actual build task is requested,
+// not on read-only invocations like `./gradlew tasks` or IDE project sync.
+val pluginBaseVersion = "1.0"
+val pluginPatchFile = layout.projectDirectory.file(".gradle/plugin-patch.txt").asFile
+val pluginBuildTriggers = setOf(
+    "installPlugin", "pluginZip", "build", "assemble", "shadowJar", "extensionJson", "jar"
+)
+val isBuildInvocation = gradle.startParameter.taskNames.any { name ->
+    name.substringAfterLast(':') in pluginBuildTriggers
+}
+val pluginPatch: Int = run {
+    val current = pluginPatchFile.takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull() ?: 0
+    if (!isBuildInvocation) return@run current
+    val next = current + 1
+    pluginPatchFile.parentFile.mkdirs()
+    pluginPatchFile.writeText(next.toString())
+    next
+}
+version = "$pluginBaseVersion.$pluginPatch"
 
 kotlin {
     jvmToolchain(21)
@@ -149,7 +169,7 @@ fun generateExtensionJson(extensionJson: ExtensionJson, destinationFile: Path) {
 
 val extension = ExtensionJson(
     id = "jetbrains.toolbox.pomerium",
-    version = "1.0.0",
+    version = project.version.toString(),
     meta = ExtensionJsonMeta(
         name = "Toolbox Pomerium Plugin",
         description = "Secure Pomerium tunneler plugin for JetBrains Toolbox",

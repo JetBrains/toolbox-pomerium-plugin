@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import kotlin.jvm.optionals.getOrNull
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 
@@ -53,6 +54,7 @@ class PomeriumTunneler(
         pomeriumHost: String = route.host,
         pomeriumPort: Int = 443,
         useTls: Boolean = true,
+        ensureUpstreamReady: Boolean = false
         ): Int = withContext(Dispatchers.Default) {
         routeLocks.computeIfAbsent(route) { Mutex() }.withLock {
             activeTunnels[route]?.let { existing ->
@@ -64,10 +66,10 @@ class PomeriumTunneler(
                 activeTunnels.remove(route, existing)
                 tunnelJobs.remove(route, existing.job)
             }
-            logger?.info("Ensure upstream ready for $route")
 
             authProvider.getAuth(route).await() // Populate auth if required
-            if (useTls) {
+            if (ensureUpstreamReady) {
+                logger?.info("Ensure upstream ready for $route")
                 ensureUpstreamReady(route, pomeriumHost, pomeriumPort, useTls)
             }
 
