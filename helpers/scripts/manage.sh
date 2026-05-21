@@ -29,6 +29,12 @@ Usage:
   ./manage.sh check-auth <auth> [port]
   ./manage.sh check-auth '<jetbrains://...>'
   ./manage.sh check-auth-wrong [<jetbrains://...>]
+  ./manage.sh probe-raw <auth> [port]
+  ./manage.sh probe-raw '<jetbrains://...>' [port]
+  ./manage.sh probe-current-link [connect-target]
+  ./manage.sh probe-connect '<jetbrains://...>' [connect-target]
+  ./manage.sh compare-current-link [raw-port] [connect-target]
+  ./manage.sh clear-pomerium-jwt
   ./manage.sh shell
   ./manage.sh help
 EOF
@@ -67,7 +73,7 @@ recreate() {
   build_image
   start_services
   echo "[manage] waiting for real stack startup output"
-  sleep 3
+  wait_for_agent_info || true
   show_outputs
 }
 
@@ -76,6 +82,19 @@ restart_agent() {
   compose exec -T -e POMERIUM_STACK_MODE="real" "$COMPOSE_SERVICE" bash -lc '/opt/helpers/docker/agent-stack.sh restart'
   echo "[manage] recent container logs"
   show_outputs
+}
+
+wait_for_agent_info() {
+  ensure_compose_file
+  local attempt
+  for attempt in $(seq 1 60); do
+    if compose exec -T "$COMPOSE_SERVICE" bash -lc 'test -s /home/dev/.local/share/JetBrains/Toolbox/agent-info.json' >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  echo "[manage] agent-info.json did not appear in time" >&2
+  return 1
 }
 
 stop_agent() {
@@ -87,11 +106,13 @@ stop_agent() {
 
 raw_print_link() {
   ensure_compose_file
+  wait_for_agent_info
   compose exec -T -e POMERIUM_STACK_MODE="real" "$COMPOSE_SERVICE" bash -lc '/opt/helpers/docker/agent-stack.sh print-link'
 }
 
 print_json() {
   ensure_compose_file
+  wait_for_agent_info
   compose exec -T -e POMERIUM_STACK_MODE="real" "$COMPOSE_SERVICE" bash -lc '/opt/helpers/docker/agent-stack.sh print-json'
 }
 
@@ -388,13 +409,13 @@ link = sys.argv[1]
 parsed = urllib.parse.urlparse(link)
 fragment = urllib.parse.parse_qs(parsed.fragment, keep_blank_values=True)
 
-pomerium_route = fragment.get("pomeriumRoute", [""])[0]
+client_pomerium_route = fragment.get("clientPomeriumRoute", [""])[0]
 agent_connection_url = fragment.get("agentConnectionUrl", [""])[0]
 agent_auth = fragment.get("agentAuth", [""])[0]
 
 missing = []
-if not pomerium_route:
-    missing.append("pomeriumRoute")
+if not client_pomerium_route:
+    missing.append("clientPomeriumRoute")
 if not agent_connection_url:
     missing.append("agentConnectionUrl")
 if not agent_auth:
@@ -437,6 +458,84 @@ PY
   grep -m 1 '^depth=0 ' <<<"$output" || true
 }
 
+probe_current_link() {
+  local link
+  link="$(print_link)"
+  probe_connect "$link" "${1:-agent.localhost:443}"
+}
+
+probe_raw() {
+  local auth_or_link="${1:-}"
+  local port="${2:-44000}"
+
+  if [[ -z "$auth_or_link" ]]; then
+    echo "Usage: ./manage.sh probe-raw <auth> [port]" >&2
+    echo "   or: ./manage.sh probe-raw '<jetbrains://...>' [port]" >&2
+    return 1
+  fi
+
+  python3 - <<'PY' "$auth_or_link" "$port"
+import json
+import socket
+import sys
+import urllib.parse
+
+auth_or_link = sys.argv[1]
+port = int(sys.argv[2])
+host = "127.0.0.1"
+
+if auth_or_link.startswith("jetbrains://"):
+    parsed = urllib.parse.urlparse(auth_or_link)
+    fragment = urllib.parse.parse_qs(parsed.fragment, keep_blank_values=True)
+    auth = fragment.get("agentAuth", [""])[0]
+    if not auth:
+        print("FAIL: link does not contain agentAuth")
+        raise SystemExit(2)
+else:
+    auth = auth_or_link
+
+print(f"endpoint=tcp://{host}:{port}")
+print(f"auth_length={len(auth)}")
+
+sock = socket.create_connection((host, port), timeout=5)
+sock.settimeout(3)
+sock.sendall(auth.encode("utf-8"))
+
+chunks = []
+try:
+    while True:
+        data = sock.recv(4096)
+        if not data:
+            break
+        chunks.append(data)
+except (TimeoutError, socket.timeout):
+    pass
+finally:
+    sock.close()
+
+payload = b"".join(chunks)
+print("=== Agent payload summary ===")
+print(f"bytes={len(payload)}")
+print(f"repr={payload[:200]!r}")
+print("=== Agent payload text ===")
+if payload:
+    text = payload.decode("utf-8", errors="replace")
+    print(text)
+    try:
+        obj = json.loads(text)
+        serialized = json.dumps(obj, ensure_ascii=False)
+        if "hello" in serialized:
+            print("RESULT: received JSON payload containing 'hello'")
+        else:
+            print("RESULT: received JSON payload, but it does not contain 'hello'")
+    except Exception:
+        print("RESULT: received non-JSON payload")
+else:
+    print("")
+    print("RESULT: auth sent, no payload received before timeout/EOF")
+PY
+}
+
 check_auth() {
   local auth_or_link="${1:-}"
   local port="${2:-44000}"
@@ -448,7 +547,6 @@ check_auth() {
   fi
 
   python3 - <<'PY' "$auth_or_link" "$port"
-import json
 import socket
 import ssl
 import sys
@@ -481,7 +579,6 @@ else:
     port = default_port
 
 auth = auth.encode("utf-8")
-
 connect_host = "localhost" if host.endswith(".localhost") or host == "localhost" else host
 
 raw_sock = socket.create_connection((connect_host, port), timeout=5)
@@ -491,48 +588,39 @@ if scheme == "https":
 else:
     sock = raw_sock
 
-sock.settimeout(3)
+sock.settimeout(2)
 sock.sendall(auth)
 
-chunks = []
 try:
-    while True:
-        data = sock.recv(4096)
-        if not data:
-            break
-        chunks.append(data)
-        payload = b"".join(chunks).decode("utf-8", errors="replace").strip()
-        if payload:
-            break
+    data = sock.recv(4096)
 except socket.timeout:
-    pass
+    data = b""
+finally:
+    sock.close()
 
-payload = b"".join(chunks).decode("utf-8", errors="replace").strip()
-if not payload:
-    print(f"FAIL: no response after auth on {host}:{port}")
-    raise SystemExit(2)
+payload = data.decode("utf-8", errors="replace").strip()
+if payload == "NAUTH":
+    if scheme == "https":
+        print(f"FAIL: agent rejected auth with NAUTH on {connect_host}:{port} with SNI {host}")
+    else:
+        print(f"FAIL: agent rejected auth with NAUTH on {host}:{port}")
+    raise SystemExit(3)
 
-try:
-    obj = json.loads(payload)
-except Exception as e:
-    print(f"FAIL: response is not valid JSON after auth on {host}:{port}")
+if payload:
+    if scheme == "https":
+        print(f"OK: connected and received payload after auth on {connect_host}:{port} with SNI {host}")
+    else:
+        print(f"OK: connected and received payload after auth on {host}:{port}")
     print(payload)
-    raise SystemExit(3) from e
-
-serialized = json.dumps(obj, ensure_ascii=False)
-if "hello" not in serialized:
-    print(f"FAIL: JSON response does not contain 'hello' after auth on {host}:{port}")
-    print(serialized)
-    raise SystemExit(4)
+    raise SystemExit(0)
 
 if scheme == "https":
-    print(f"OK: received JSON containing 'hello' after auth on {connect_host}:{port} with SNI {host}")
+    print(f"OK: connected and sent auth to {connect_host}:{port} with SNI {host}")
 else:
-    print(f"OK: received JSON containing 'hello' after auth on {host}:{port}")
-print(serialized)
+    print(f"OK: connected and sent auth to {host}:{port}")
+print("NOTE: according to the real agent contract, sending the auth token alone does not guarantee an immediate hello response.")
 PY
 }
-
 check_auth_wrong() {
   local link="${1:-}"
 
@@ -563,7 +651,6 @@ host = parsed_agent_url.hostname or "127.0.0.1"
 port = parsed_agent_url.port or 44000
 scheme = (parsed_agent_url.scheme or "tcp").lower()
 wrong_auth = b"wrong-auth-token"
-
 connect_host = "localhost" if host.endswith(".localhost") or host == "localhost" else host
 
 raw_sock = socket.create_connection((connect_host, port), timeout=5)
@@ -576,38 +663,86 @@ else:
 sock.settimeout(2)
 sock.sendall(wrong_auth)
 
-chunks = []
 try:
-    while True:
-        data = sock.recv(4096)
-        if not data:
-            break
-        chunks.append(data)
+    data = sock.recv(4096)
 except socket.timeout:
-    pass
+    data = b""
+finally:
+    sock.close()
 
-payload = b"".join(chunks).decode("utf-8", errors="replace").strip()
-
-if not payload:
+payload = data.decode("utf-8", errors="replace").strip()
+if payload == "NAUTH":
     if scheme == "https":
-        print(f"OK: no response for wrong auth on {connect_host}:{port} with SNI {host}")
+        print(f"OK: wrong auth was rejected with NAUTH on {connect_host}:{port} with SNI {host}")
     else:
-        print(f"OK: no response for wrong auth on {host}:{port}")
+        print(f"OK: wrong auth was rejected with NAUTH on {host}:{port}")
     raise SystemExit(0)
 
-if "hello" in payload:
-    if scheme == "https":
-        print(f"FAIL: server returned payload containing 'hello' for wrong auth on {connect_host}:{port} with SNI {host}")
-    else:
-        print(f"FAIL: server returned payload containing 'hello' for wrong auth on {host}:{port}")
-    print(payload)
+if not payload:
+    print("FAIL: wrong-auth probe did not receive NAUTH")
     raise SystemExit(4)
 
-if scheme == "https":
-    print(f"OK: wrong auth did not produce hello on {connect_host}:{port} with SNI {host}")
-else:
-    print(f"OK: wrong auth did not produce hello on {host}:{port}")
+print("FAIL: wrong-auth probe received an unexpected payload")
 print(payload)
+raise SystemExit(5)
+PY
+}
+
+probe_connect() {
+  local link="${1:-}"
+  local connect_target="${2:-agent.localhost:443}"
+
+  if [[ -z "$link" ]]; then
+    echo "Usage: ./manage.sh probe-connect '<jetbrains://...>' [connect-target]" >&2
+    return 1
+  fi
+
+  python3 "$SCRIPT_DIR/py-check.py" --link "$link" --connect-target "$connect_target"
+}
+
+compare_current_link() {
+  local raw_port="${1:-44000}"
+  local connect_target="${2:-agent.localhost:443}"
+  local link
+  link="$(print_link)"
+
+  echo "===== RAW TCP ====="
+  probe_raw "$link" "$raw_port"
+  echo
+  echo "===== POMERIUM ROUTE ====="
+  probe_connect "$link" "$connect_target"
+}
+
+clear_pomerium_jwt() {
+  python3 - <<'PY'
+import subprocess
+import sys
+
+service = "Toolbox"
+account = (
+    "jetbrains.toolbox.pomerium-Pomerium instance authenticate.localhost"
+    "--NZfvY_b8z28Ka7f1bl3bJmWLy6Sot4d0Jupk6ygcFQ="
+)
+
+result = subprocess.run(
+    ["security", "delete-generic-password", "-s", service, "-a", account],
+    capture_output=True,
+    text=True,
+)
+
+if result.returncode == 0:
+    print("OK: deleted cached Pomerium JWT from macOS keychain")
+    raise SystemExit(0)
+
+stderr = (result.stderr or "").strip()
+if "could not be found" in stderr.lower():
+    print("OK: cached Pomerium JWT was already absent from macOS keychain")
+    raise SystemExit(0)
+
+print("FAIL: could not delete cached Pomerium JWT", file=sys.stderr)
+if stderr:
+    print(stderr, file=sys.stderr)
+raise SystemExit(result.returncode or 1)
 PY
 }
 
@@ -721,6 +856,25 @@ case "${1:-}" in
   check-auth-wrong)
     shift
     check_auth_wrong "${1:-}"
+    ;;
+  probe-raw)
+    shift
+    probe_raw "${1:-}" "${2:-44000}"
+    ;;
+  probe-current-link)
+    shift
+    probe_current_link "${1:-agent.localhost:443}"
+    ;;
+  probe-connect)
+    shift
+    probe_connect "${1:-}" "${2:-agent.localhost:443}"
+    ;;
+  compare-current-link)
+    shift
+    compare_current_link "${1:-44000}" "${2:-agent.localhost:443}"
+    ;;
+  clear-pomerium-jwt)
+    clear_pomerium_jwt
     ;;
   shell)
     shell_into

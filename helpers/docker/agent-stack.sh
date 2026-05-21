@@ -12,17 +12,19 @@ TB_JAVA_HOME="${TB_JAVA_HOME:-${JAVA_HOME:-}}"
 PORT_FILE="$TOOLBOX_DATA_DIR/.port"
 AGENT_LOG="$TOOLBOX_DATA_DIR/agent.log"
 AGENT_INFO="$TOOLBOX_DATA_DIR/agent-info.json"
-FORWARD_INFO="$TOOLBOX_DATA_DIR/forward-44000.json"
+FORWARD_AGENT_INFO="$TOOLBOX_DATA_DIR/forward-agent.json"
 FORWARD_5990_INFO="$TOOLBOX_DATA_DIR/forward-5990.json"
 LINK_FILE="$TOOLBOX_DATA_DIR/jetbrains-link.txt"
 RUNTIME_DEFAULTS_FILE="${RUNTIME_DEFAULTS_FILE:-/opt/helpers/state/link-helper.defaults.real.env}"
 
-POMERIUM_ROUTE="${POMERIUM_ROUTE:-}"
+CLIENT_POMERIUM_ROUTE="${CLIENT_POMERIUM_ROUTE:-}"
 CONNECTION_KEY="${CONNECTION_KEY:-tcp%3A%2F%2F0.0.0.0%3A5990%23jt%3Dca7cd969-f4dc-4d58-bdad-3ab4f3f9e8d6%26p%3DIU%26fp%3DE80F9EA7A46A357ED269F7F9F7E628F0A70BB6251A69E96F86DB658A96029140%26cb%3D253.32098.37%26newUi%3Dtrue%26jb%3D21.0.10b1163.110}"
 POMERIUM_PORT="${POMERIUM_PORT:-}"
+DISPLAY_NAME="${DISPLAY_NAME:-}"
 AGENT_CONNECTION_URL="${AGENT_CONNECTION_URL:-}"
 POMERIUM_STACK_MODE="${POMERIUM_STACK_MODE:-mock}"
 AGENT_TCP_LISTEN_ON_PORT="${AGENT_TCP_LISTEN_ON_PORT:-}"
+AGENT_FORWARD_PORT="${AGENT_FORWARD_PORT:-44000}"
 BACKEND_FORWARD_PORT="${BACKEND_FORWARD_PORT:-5990}"
 
 log() {
@@ -32,12 +34,12 @@ log() {
 apply_pomerium_mode_defaults() {
   case "$POMERIUM_STACK_MODE" in
     real)
-      : "${POMERIUM_ROUTE:=tcp+https%3A%2F%2Fagent.localhost%3A443}"
+      : "${CLIENT_POMERIUM_ROUTE:=tcp%3A%2F%2Fbackend.localhost%3A443}"
       : "${POMERIUM_PORT:=443}"
       : "${AGENT_CONNECTION_URL:=https%3A%2F%2Fagent.localhost%3A443}"
       ;;
     *)
-      : "${POMERIUM_ROUTE:=tcp+https%3A%2F%2Flocalhost%3A443}"
+      : "${CLIENT_POMERIUM_ROUTE:=tcp%3A%2F%2Fbackend.localhost%3A443}"
       : "${POMERIUM_PORT:=443}"
       : "${AGENT_CONNECTION_URL:=https%3A%2F%2Flocalhost%3A44000}"
       ;;
@@ -50,6 +52,8 @@ load_runtime_defaults() {
   while IFS= read -r defaults_line; do
     case "$defaults_line" in
       AGENT_TCP_LISTEN_ON_PORT=*) AGENT_TCP_LISTEN_ON_PORT="${defaults_line#AGENT_TCP_LISTEN_ON_PORT=}" ;;
+      AGENT_FORWARD_PORT=*) AGENT_FORWARD_PORT="${defaults_line#AGENT_FORWARD_PORT=}" ;;
+      DISPLAY_NAME=*) DISPLAY_NAME="${defaults_line#DISPLAY_NAME=}" ;;
       BACKEND_FORWARD_PORT=*) BACKEND_FORWARD_PORT="${defaults_line#BACKEND_FORWARD_PORT=}" ;;
     esac
   done < <(python3 - <<'PY' "$RUNTIME_DEFAULTS_FILE"
@@ -58,7 +62,7 @@ import shlex
 import sys
 
 path = pathlib.Path(sys.argv[1])
-keys = ["AGENT_TCP_LISTEN_ON_PORT", "BACKEND_FORWARD_PORT"]
+keys = ["AGENT_TCP_LISTEN_ON_PORT", "AGENT_FORWARD_PORT", "BACKEND_FORWARD_PORT", "DISPLAY_NAME"]
 values = {k: "" for k in keys}
 
 for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -131,17 +135,17 @@ kill_background() {
 
 stop_stack() {
   log "Stopping forwarder and Toolbox Agent"
-  kill_background "$FORWARD_INFO.pid"
+  kill_background "$FORWARD_AGENT_INFO.pid"
   kill_background "$FORWARD_5990_INFO.pid"
 
   pkill -f "/opt/helpers/docker/bridge.py --target-host 127.0.0.1" 2>/dev/null || true
   pkill -f "$TB_CLI_PATH agent" 2>/dev/null || true
-  rm -f "$PORT_FILE" "$AGENT_INFO" "$FORWARD_INFO" "$FORWARD_5990_INFO" "$LINK_FILE"
+  rm -f "$PORT_FILE" "$AGENT_INFO" "$FORWARD_AGENT_INFO" "$FORWARD_5990_INFO" "$LINK_FILE"
   fix_ownership
 }
 
 start_agent() {
-  rm -f "$PORT_FILE" "$AGENT_INFO" "$FORWARD_INFO" "$FORWARD_5990_INFO" "$LINK_FILE"
+  rm -f "$PORT_FILE" "$AGENT_INFO" "$FORWARD_AGENT_INFO" "$FORWARD_5990_INFO" "$LINK_FILE"
   : > "$AGENT_LOG"
   fix_ownership
 
@@ -187,34 +191,44 @@ PY
   return 1
 }
 
-start_forwarder_44000() {
+start_agent_forwarder() {
   local agent_port
   agent_port="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["listenOn"]["port"])' "$AGENT_INFO")"
 
-  if [[ "$agent_port" == "44000" ]]; then
-    log "Skipping raw forwarder on 44000 because Toolbox Agent already listens on 44000"
-    python3 - <<'PY' "$FORWARD_INFO"
+  if [[ -z "$AGENT_FORWARD_PORT" ]]; then
+    if [[ "$agent_port" != "44000" ]]; then
+      fail "Agent forwarder is disabled, but Toolbox Agent listens on $agent_port. Set AGENT_TCP_LISTEN_ON_PORT=44000 or enable AGENT_FORWARD_PORT=44000."
+    fi
+    log "Agent forwarder disabled; Toolbox Agent listens directly on 44000"
+    python3 - <<'PY' "$FORWARD_AGENT_INFO"
 import json
 import sys
 
 with open(sys.argv[1], "w", encoding="utf-8") as out:
-    json.dump({"listen_host": "0.0.0.0", "listen_port": 44000, "target_host": "127.0.0.1", "target_port": 44000}, out)
+    json.dump({"listen_host": "0.0.0.0", "listen_port": 44000, "target_host": "127.0.0.1", "target_port": 44000, "mode": "direct"}, out)
 PY
     fix_ownership
     return 0
   fi
 
-  log "Starting raw forwarder 44000 -> $agent_port"
-  python3 /opt/helpers/docker/bridge.py \
-    --target-host 127.0.0.1 \
-    --target-port "$agent_port" \
-    --listen-host 0.0.0.0 \
-    --listen-port 44000 \
-    --info-file "$FORWARD_INFO" &
-  echo $! > "$FORWARD_INFO.pid"
+  if [[ "$agent_port" == "$AGENT_FORWARD_PORT" ]]; then
+    log "Skipping agent forwarder on $AGENT_FORWARD_PORT because Toolbox Agent already listens on that port"
+    python3 - <<'PY' "$FORWARD_AGENT_INFO" "$AGENT_FORWARD_PORT"
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as out:
+    json.dump({"listen_host": "0.0.0.0", "listen_port": int(sys.argv[2]), "target_host": "127.0.0.1", "target_port": int(sys.argv[2]), "mode": "direct"}, out)
+PY
+    fix_ownership
+    return 0
+  fi
+
+  log "Starting agent forwarder $AGENT_FORWARD_PORT -> $agent_port"
+  python3 /opt/helpers/docker/bridge.py     --target-host 127.0.0.1     --target-port "$agent_port"     --listen-host 0.0.0.0     --listen-port "$AGENT_FORWARD_PORT"     --info-file "$FORWARD_AGENT_INFO" &
+  echo $! > "$FORWARD_AGENT_INFO.pid"
   fix_ownership
 }
-
 start_forwarder_5990() {
   if [[ -z "$BACKEND_FORWARD_PORT" ]]; then
     log "Skipping backend relay because BACKEND_FORWARD_PORT is empty"
@@ -247,7 +261,7 @@ PY
 
 print_outputs() {
   apply_pomerium_mode_defaults
-  python3 - <<'PY' "$AGENT_INFO" "$FORWARD_INFO" "$TBCLI_VERSION" "$TB_CLI_PATH" "$PORT_FILE" "$LINK_FILE" "$POMERIUM_ROUTE" "$CONNECTION_KEY" "$POMERIUM_PORT" "$AGENT_CONNECTION_URL"
+  python3 - <<'PY' "$AGENT_INFO" "$FORWARD_AGENT_INFO" "$TBCLI_VERSION" "$TB_CLI_PATH" "$PORT_FILE" "$LINK_FILE" "$CLIENT_POMERIUM_ROUTE" "$CONNECTION_KEY" "$POMERIUM_PORT" "$DISPLAY_NAME" "$AGENT_CONNECTION_URL"
 import json
 import sys
 
@@ -257,23 +271,29 @@ link_path = sys.argv[6]
 
 link = (
     "jetbrains://remote-dev/jetbrains.toolbox.pomerium/new-environment"
-    f"#pomeriumRoute={sys.argv[7]}"
+    f"#clientPomeriumRoute={sys.argv[7]}"
     f"&connectionKey={sys.argv[8]}"
     f"&pomeriumPort={sys.argv[9]}"
-    f"&agentConnectionUrl={sys.argv[10]}"
+)
+if sys.argv[10]:
+    link += f"&displayName={sys.argv[10]}"
+link += (
+    f"&agentConnectionUrl={sys.argv[11]}"
     f"&agentAuth={agent.get('authToken', '')}"
 )
 
 payload = {
+    "display_name": sys.argv[10],
     "tbcli_version": sys.argv[3],
     "tb_cli_path": sys.argv[4],
     "agent_endpoint_file": sys.argv[5],
     "agent_listen_on": agent["listenOn"],
     "agent_port": agent["listenOn"]["port"],
     "agent_auth": agent.get("authToken"),
-    "forward_44000": {
+    "agent_forward": {
         "host": forward["listen_host"],
         "port": forward["listen_port"],
+        "mode": forward.get("mode", "forwarded"),
     },
     "jetbrains_link": link,
 }
@@ -290,7 +310,7 @@ PY
 
 print_link_only() {
   apply_pomerium_mode_defaults
-  python3 - <<'PY' "$AGENT_INFO" "$LINK_FILE" "$POMERIUM_ROUTE" "$CONNECTION_KEY" "$POMERIUM_PORT" "$AGENT_CONNECTION_URL"
+  python3 - <<'PY' "$AGENT_INFO" "$LINK_FILE" "$CLIENT_POMERIUM_ROUTE" "$CONNECTION_KEY" "$POMERIUM_PORT" "$DISPLAY_NAME" "$AGENT_CONNECTION_URL"
 import json
 import sys
 
@@ -299,10 +319,14 @@ link_path = sys.argv[2]
 
 link = (
     "jetbrains://remote-dev/jetbrains.toolbox.pomerium/new-environment"
-    f"#pomeriumRoute={sys.argv[3]}"
+    f"#clientPomeriumRoute={sys.argv[3]}"
     f"&connectionKey={sys.argv[4]}"
     f"&pomeriumPort={sys.argv[5]}"
-    f"&agentConnectionUrl={sys.argv[6]}"
+)
+if sys.argv[6]:
+    link += f"&displayName={sys.argv[6]}"
+link += (
+    f"&agentConnectionUrl={sys.argv[7]}"
     f"&agentAuth={agent.get('authToken', '')}"
 )
 
@@ -320,11 +344,16 @@ start_stack() {
   load_runtime_defaults
   resolve_java_home
   log "Using TB_JAVA_HOME=$TB_JAVA_HOME"
-  log "Pomerium stack mode=$POMERIUM_STACK_MODE route=$POMERIUM_ROUTE"
+  log "Pomerium stack mode=$POMERIUM_STACK_MODE clientRoute=$CLIENT_POMERIUM_ROUTE"
   if [[ -n "$AGENT_TCP_LISTEN_ON_PORT" ]]; then
     log "Toolbox Agent fixed tcp listen port=$AGENT_TCP_LISTEN_ON_PORT"
   else
     log "Toolbox Agent tcp listen port=automatic"
+  fi
+  if [[ -n "$AGENT_FORWARD_PORT" ]]; then
+    log "Agent forwarder port=$AGENT_FORWARD_PORT"
+  else
+    log "Agent forwarder disabled"
   fi
   if [[ -n "$BACKEND_FORWARD_PORT" ]]; then
     log "Backend relay port=$BACKEND_FORWARD_PORT"
@@ -333,12 +362,12 @@ start_stack() {
   fi
   start_agent
   wait_for_result || fail "Agent did not emit ~RESULT"
-  start_forwarder_44000
+  start_agent_forwarder
   start_forwarder_5990
 
   log "Waiting for forwarder metadata"
   for _ in $(seq 1 40); do
-    [[ -s "$FORWARD_INFO" ]] || { sleep 0.25; continue; }
+    [[ -s "$FORWARD_AGENT_INFO" ]] || { sleep 0.25; continue; }
     if [[ -n "$BACKEND_FORWARD_PORT" ]]; then
       [[ -s "$FORWARD_5990_INFO" ]] || { sleep 0.25; continue; }
     fi
@@ -346,17 +375,15 @@ start_stack() {
     sleep 0.25
   done
 
-  if [[ ! -s "$FORWARD_INFO" ]]; then
-    fail "Forwarder on 44000 did not start"
+  if [[ ! -s "$FORWARD_AGENT_INFO" ]]; then
+    fail "Agent forwarder metadata was not produced"
   fi
   if [[ -n "$BACKEND_FORWARD_PORT" ]] && [[ ! -s "$FORWARD_5990_INFO" ]]; then
     fail "Forwarder on 5990 did not start"
   fi
 
-  log "Stack startup complete, printing connection details"
-  print_outputs
-  log "Direct link:"
-  print_link_only
+  log "Stack startup complete"
+  log "Use 'agent-stack.sh print-json' or 'agent-stack.sh print-link' to inspect live connection details explicitly"
 }
 
 case "${1:-start}" in

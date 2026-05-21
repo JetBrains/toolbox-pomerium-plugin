@@ -10,6 +10,7 @@ TOOLBOX_CACHE_DIR="${TOOLBOX_CACHE_DIR:-$TOOLBOX_HOME/.cache/JetBrains/Toolbox-C
 TBCLI_DIR="$TOOLBOX_CACHE_DIR/tbcli-$TBCLI_VERSION"
 TB_CLI_PATH="$TBCLI_DIR/bin/tbcli"
 TB_JAVA_HOME="${TB_JAVA_HOME:-$JAVA_HOME}"
+POMERIUM_STACK_MODE="${POMERIUM_STACK_MODE:-real}"
 AGENT_LOG="$TOOLBOX_DATA_DIR/agent.log"
 
 log() {
@@ -71,7 +72,7 @@ log "Using TB_JAVA_HOME=$TB_JAVA_HOME"
 log "Starting sshd on port 22"
 /usr/sbin/sshd
 python3 /opt/helpers/docker/watch_port.py &
-/opt/helpers/docker/agent-stack.sh start || fail "Agent stack startup failed"
+POMERIUM_STACK_MODE="$POMERIUM_STACK_MODE" /opt/helpers/docker/agent-stack.sh start || fail "Agent stack startup failed"
 
 log "Streaming Toolbox Agent log"
 tail -F "$AGENT_LOG"

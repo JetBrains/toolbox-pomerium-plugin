@@ -20,7 +20,7 @@ There are two supported operational paths:
 - `write-link-defaults.sh`
   - reads live agent data from the running container
   - updates `link-helper.defaults.real.env`
-  - keeps runtime defaults such as fixed agent port and backend relay port
+  - keeps runtime defaults such as fixed agent port, agent forwarder port, and backend relay port
 
 - `link-helper.sh`
   - reads `link-helper.defaults.real.env`
@@ -36,6 +36,7 @@ There are two supported operational paths:
   - starts `tbcli agent`
   - reads runtime settings from the mounted defaults file
   - optionally fixes the agent TCP port
+  - optionally starts the agent forwarder
   - optionally starts the backend relay
 
 - `install-tbcli-remote.sh`
@@ -74,7 +75,7 @@ These files are intended to stay out of git.
 Run from:
 
 ```bash
-cd /Users/Alisa.Afonina/work/toolbox/toolbox-pomerium-plugin/helpers/scripts
+cd helpers/scripts
 ```
 
 ### Start or recreate the real stack
@@ -82,6 +83,13 @@ cd /Users/Alisa.Afonina/work/toolbox/toolbox-pomerium-plugin/helpers/scripts
 ```bash
 ./manage.sh recreate
 ```
+
+This starts the full local Docker stack:
+
+- `helpers-upstream`
+- `keycloak`
+- `verify`
+- `real-pomerium`
 
 ### Restart only the Toolbox Agent
 
@@ -139,13 +147,15 @@ This keeps `agentAuth` in sync with the current live agent:
 
 The helper asks for:
 
-- `pomeriumRoute`
+- `clientPomeriumRoute`
 - `pomeriumPort`
 - `pomeriumInstance`
+- `displayName`
 - `agentConnectionUrl`
 - `connectionKey`
 - `agentAuth`
 - `agentTcpListenOnPort`
+- `agentForwardPort`
 - `backendRelayPort`
 
 After the prompts it:
@@ -155,7 +165,7 @@ After the prompts it:
 
 ### 3. Apply the runtime settings
 
-If you changed `agentTcpListenOnPort` or `backendRelayPort`, recreate the stack:
+If you changed `agentTcpListenOnPort`, `agentForwardPort`, or `backendRelayPort`, recreate the stack:
 
 ```bash
 ./manage.sh recreate
@@ -172,8 +182,7 @@ If you changed `agentTcpListenOnPort` or `backendRelayPort`, recreate the stack:
 1. Create the SSH config file:
 
 ```bash
-cp /Users/Alisa.Afonina/work/toolbox/toolbox-pomerium-plugin/helpers/state/remote-instance.env.example \
-   /Users/Alisa.Afonina/work/toolbox/toolbox-pomerium-plugin/helpers/state/remote-instance.env
+cp ../state/remote-instance.env.example ../state/remote-instance.env
 ```
 
 2. Fill in:
@@ -195,7 +204,7 @@ Internet behavior:
 - offline remote host:
   - `REMOTE_HAS_INTERNET='no'`
   - the script uploads a local `tbcli-<version>.tar.gz` archive to the remote host
-  - if `LOCAL_TBCLI_ARCHIVE_PATH` is empty, the script downloads that archive locally into `helpers/.cache`
+  - if `LOCAL_TBCLI_ARCHIVE_PATH` is empty, the script downloads that archive locally into `helpers/state/.cache`
 
 3. Install `tbcli` on the remote machine:
 
@@ -213,6 +222,47 @@ Internet behavior:
 
 ```bash
 ./link-helper.sh
+```
+
+## Link Shape
+
+The generated deep link intentionally mixes two kinds of backend addressing:
+
+- `clientPomeriumRoute`
+  - top-level Pomerium route for the IDE/backend flow
+  - default: `tcp://backend.localhost:443`
+  - this is the external hostname that the plugin should use when it asks Pomerium to open the backend tunnel
+
+- `connectionKey`
+  - raw Toolbox backend connection metadata
+  - default host/port prefix: `tcp://0.0.0.0:5990#...`
+  - the fragment after `#` carries the IDE attach metadata (`jt`, `p`, `fp`, `cb`, and related fields)
+
+- `displayName`
+  - optional display label shown in Toolbox
+
+- `agentConnectionUrl`
+  - top-level Pomerium route for the Toolbox Agent
+  - default: `https://agent.localhost:443`
+
+- `agentAuth`
+  - auth token emitted by the running `tbcli agent` instance
+
+In other words:
+
+```text
+clientPomeriumRoute = backend route through Pomerium
+connectionKey        = raw backend listener + IDE metadata
+displayName         = optional environment label
+agentConnectionUrl   = agent route through Pomerium
+agentAuth            = live agent token
+```
+
+Current local Pomerium routes are:
+
+```text
+backend.localhost:443 -> helpers-upstream:5990
+agent.localhost:443   -> helpers-upstream:44000
 ```
 
 ## Runtime Settings
@@ -237,6 +287,24 @@ Then:
 
 - `tbcli agent` starts directly on `44000`
 - the `44000` bridge is skipped
+
+### `AGENT_FORWARD_PORT`
+
+- empty value:
+  - agent forwarder is disabled
+  - this only works if `tbcli agent` itself listens on `44000`
+
+- fixed value, for example:
+
+```bash
+AGENT_FORWARD_PORT='44000'
+```
+
+Then:
+
+- `agent-stack.sh` starts a relay:
+  - `0.0.0.0:44000 -> 127.0.0.1:<tbcli agent port>`
+- if the agent already listens directly on `44000`, the relay is skipped
 
 ### `BACKEND_FORWARD_PORT`
 

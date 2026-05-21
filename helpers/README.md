@@ -7,6 +7,14 @@ There are now two ways to work with it:
 - Docker-based local stack
 - SSH-based real instance flow
 
+Link shape:
+
+- `clientPomeriumRoute` = backend route through Pomerium, usually `tcp://backend.localhost:443`
+- `connectionKey` = raw backend listener plus IDE metadata, usually `tcp://0.0.0.0:5990#...`
+- `displayName` = optional label shown in Toolbox
+- `agentConnectionUrl` = agent route through Pomerium, usually `https://agent.localhost:443`
+- `agentAuth` = live token from `tbcli agent`
+
 Start here:
 
 - [SETUP.md](/Users/Alisa.Afonina/work/toolbox/toolbox-pomerium-plugin/helpers/SETUP.md)
@@ -14,7 +22,7 @@ Start here:
 Most common commands:
 
 ```bash
-cd /Users/Alisa.Afonina/work/toolbox/toolbox-pomerium-plugin/helpers/scripts
+cd helpers/scripts
 ./write-link-defaults.sh
 ./link-helper.sh
 ./manage.sh recreate
@@ -24,7 +32,7 @@ cd /Users/Alisa.Afonina/work/toolbox/toolbox-pomerium-plugin/helpers/scripts
 SSH / real instance flow:
 
 ```bash
-cd /Users/Alisa.Afonina/work/toolbox/toolbox-pomerium-plugin/helpers/scripts
+cd helpers/scripts
 cp ../state/remote-instance.env.example ../state/remote-instance.env
 ./install-tbcli-remote.sh
 ./write-link-defaults-remote.sh
