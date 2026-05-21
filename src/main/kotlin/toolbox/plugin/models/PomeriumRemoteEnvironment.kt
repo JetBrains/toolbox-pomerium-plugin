@@ -34,9 +34,11 @@ sealed interface EnvironmentState {
     data object PomeriumAuthorizationError : EnvironmentState
     data object PomeriumTunnelCreationError : EnvironmentState
 }
+
 class PomeriumEnvironment(
-    name: String,
+    private val displayName: String,
     val url: String,
+    val clientRoute: String,
     val agentUrl: String,
     val agentAuthData: String?,
     val link: PomeriumLink,
@@ -49,16 +51,17 @@ class PomeriumEnvironment(
 
     init {
         logger.info("Initializing pomerium environment")
-        logger.info("Environment name: $name")
+        logger.info("Environment name: $displayName")
         logger.info("Environment URL: $url")
         logger.info("Environment agent URL: $agentUrl")
-        logger.info("Environment link: ${link.route} ${link.pomeriumInstance}:${link.pomeriumPort}}")
+        logger.info("Environment URL: $clientRoute")
         logger.info("Environment '${id}': initial state ${EnvironmentState.Disconnected::class.simpleName}")
     }
     override val description: MutableStateFlow<EnvironmentDescription> = MutableStateFlow(EnvironmentDescription.General(null))
     override val connectionRequest: MutableSharedFlow<Boolean> = MutableSharedFlow(replay = 1)
     val environmentState: MutableStateFlow<EnvironmentState> = MutableStateFlow(EnvironmentState.Disconnected)
-
+    override val nameFlow: MutableStateFlow<String>
+        get() = MutableStateFlow(displayName)
     private val contentsView = PomeriumEnvironmentContentsView(
         pluginScope,
         logger,

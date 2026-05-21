@@ -40,19 +40,20 @@ jetbrains://remote-dev/jetbrains.toolbox.pomerium/new-environment#<params>
 Parameters can be passed in fragment (`#...`) or query (`?...`), fragment is preferred.
 
 Required top-level params:
-- `pomeriumRoute` (example: `tcp+https://localhost:443`, URL-encoded in link)
-- `connectionKey` (TCP endpoint + fragment metadata)
-- `agentConnectionUrl` (HTTPS URL for agent connection)
+- `clientPomeriumRoute` (example: `tcp://backend.localhost:443`, URL-encoded in link; this is the backend route through Pomerium)
+- `connectionKey` (raw Toolbox backend endpoint + fragment metadata, for example `tcp://0.0.0.0:5990#...`)
+- `agentConnectionUrl` (HTTPS URL for agent connection through Pomerium)
 - `agentAuth` (agent auth token)
 
 Optional top-level params:
 - `pomeriumPort` (defaults to `443`)
 - `pomeriumInstance`
+- `displayName`
 
 Example:
 
 ```text
-jetbrains://remote-dev/jetbrains.toolbox.pomerium/new-environment#pomeriumRoute=tcp+https%3A%2F%2Flocalhost%3A443&connectionKey=tcp%3A%2F%2F127.0.0.1%3A5990%23jt%3Dabc%26p%3DIU%26cb%3D253.32098.37&agentConnectionUrl=https%3A%2F%2Flocalhost%3A44000&agentAuth=token
+jetbrains://remote-dev/jetbrains.toolbox.pomerium/new-environment#clientPomeriumRoute=tcp%3A%2F%2Fbackend.localhost%3A443&connectionKey=tcp%3A%2F%2F0.0.0.0%3A5990%23jt%3Dabc%26p%3DIU%26cb%3D253.32098.37&displayName=My%20Dev%20Env&agentConnectionUrl=https%3A%2F%2Fagent.localhost%3A443&agentAuth=token
 ```
 
 `connectionKey` format:

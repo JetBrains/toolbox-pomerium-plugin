@@ -93,7 +93,7 @@ class PomeriumRemoteProvider(
     override suspend fun handleUri(uri: URI) {
         /*
         jetbrains://remote-dev/jetbrains.toolbox.pomerium/new-environment
-        #pomeriumRoute=tcp+https%3A%2F%2Flocalhost%3A443
+        #clientPomeriumRoute=tcp%3A%2F%2Fbackend.localhost%3A443
         &pomeriumPort=443
         &connectionKey=tcp://127.0.0.1:61618#
                 jt=f91eab64-f2d2-4f37-b9b0-7562bdacf07b
@@ -114,16 +114,24 @@ class PomeriumRemoteProvider(
 
         val params = parseTopLevelParams(
             paramSource!!,
-            listOf("pomeriumRoute", "pomeriumInstance", "pomeriumPort", "connectionKey", "agentConnectionUrl", "agentAuth")
+            listOf(
+                "clientPomeriumRoute",
+                "displayName",
+                "pomeriumInstance",
+                "pomeriumPort",
+                "connectionKey",
+                "agentConnectionUrl",
+                "agentAuth"
+            )
         )
 
-        val rawRoute = decodeUriIfNeeded(params["pomeriumRoute"] ?: error("Missing pomeriumRoute"))
+        val rawRoute = decodeUriIfNeeded(params["clientPomeriumRoute"] ?: error("Missing clientPomeriumRoute"))
 
-        val str = rawRoute.toString().removePrefix("tcp+")
-        val pomeriumRoute = URI(str)
+        val clientRoute = URI(rawRoute.toString())
 
         val pomeriumInstance =params["pomeriumInstance"]?.takeIf { it.isNotBlank() }
         val pomeriumPort =params["pomeriumPort"]?.toIntOrNull() ?: 443
+        val name = params["displayName"].toString()
 
         val connectionLink = decodeUriIfNeeded(params["connectionKey"] ?: error("Missing connectionKey"))
         val connectionKeyUri = URI(connectionLink)
@@ -147,7 +155,8 @@ class PomeriumRemoteProvider(
           pomeriumPort = pomeriumPort)
 
         val pomeriumEnvironment = PomeriumEnvironment(
-            "name",//TOOD
+            name,
+            clientRoute.toString(),
             connectionLink.toString(),
             agentConnectionUrl.toString(),
             agentConnectionAuth.toString(),
@@ -159,18 +168,18 @@ class PomeriumRemoteProvider(
             scope
         )
 
-        //TODO
-        _envs["test"] = pomeriumEnvironment
+        _envs[name] = pomeriumEnvironment
         environments.value = LoadableState.Value(_envs.values.toList())
 
         environmentUiPageManager.showPluginEnvironmentsPage(true)
         toolboxUi.showWindowSuspending()
 
-        pomeriumEnvironment.connect {
-            /*if (!p.isNullOrBlank() && !cb.isNullOrBlank()) {
-                clientHelper.connectToIde(pomeriumEnvironment.id, "$p-$cb", null)
+       /* if(!connectionLink.isNullOrBlank())
+            pomeriumEnvironment.connect {
+                if (!p.isNullOrBlank() && !cb.isNullOrBlank()) {
+                    clientHelper.connectToIde(pomeriumEnvironment.id, "$p-$cb", null)
+                }
             }*/
-        }
     }
 
     private fun parseTopLevelParams(source: String, keys: List<String>): Map<String, String> {
