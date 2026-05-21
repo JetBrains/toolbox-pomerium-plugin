@@ -47,7 +47,7 @@ class PomeriumEnvironment(
     i18n: LocalizableStringFactory,
     colorPalette: EnvironmentStateColorPalette,
     pluginScope: CoroutineScope
-) : RemoteProviderEnvironment(name), Closeable {
+) : RemoteProviderEnvironment(displayName), Closeable {
 
     init {
         logger.info("Initializing pomerium environment")
@@ -67,7 +67,14 @@ class PomeriumEnvironment(
         logger,
         this,
         tunneler,
-        ::handleBeforeProjectOpen)
+        ::handleBeforeProjectOpen,
+        DevEnvConnectionInfo(
+            this.url,
+            this.agentUrl,
+            this.agentAuthData,
+            this.link.pomeriumPort,
+        )
+    )
 
     private fun handleBeforeProjectOpen() {
 

@@ -173,13 +173,13 @@ class PomeriumRemoteProvider(
 
         environmentUiPageManager.showPluginEnvironmentsPage(true)
         toolboxUi.showWindowSuspending()
-
-       /* if(!connectionLink.isNullOrBlank())
-            pomeriumEnvironment.connect {
+        pomeriumEnvironment.connect {
+            /* if(!connectionLink.isNullOrBlank())
                 if (!p.isNullOrBlank() && !cb.isNullOrBlank()) {
                     clientHelper.connectToIde(pomeriumEnvironment.id, "$p-$cb", null)
                 }
             }*/
+        }
     }
 
     private fun parseTopLevelParams(source: String, keys: List<String>): Map<String, String> {

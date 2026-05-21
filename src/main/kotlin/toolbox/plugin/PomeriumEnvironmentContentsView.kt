@@ -28,7 +28,8 @@ class PomeriumEnvironmentContentsView(
     private val logger: Logger,
     private val devEnv: PomeriumEnvironment,
     private val tunneler: PomeriumTunneler,
-    private val beforeProjectOpen: suspend () -> Unit
+    private val beforeProjectOpen: suspend () -> Unit,
+    val info: DevEnvConnectionInfo
 ) : PortForwardingCapableEnvironmentContentsView,
     AgentConnectionBasedEnvironmentContentsView,
     ManualEnvironmentContentsView {
@@ -49,7 +50,7 @@ class PomeriumEnvironmentContentsView(
 
 
     override fun getHostTunnelConnector(): HostTunnelConnector {
-        return PomeriumHostTunnelConnector(tunneler, logger)
+        return PomeriumHostTunnelConnector(tunneler, info, logger)
     }
 
     override fun getAgentConnectionHandle(redeploy: Boolean): AgentConnectionHandle {
@@ -57,12 +58,7 @@ class PomeriumEnvironmentContentsView(
             pluginScope,
             tunneler,
             logger,
-            DevEnvConnectionInfo(
-                devEnv.url,
-                devEnv.agentUrl,
-                devEnv.agentAuthData,
-                devEnv.link.pomeriumPort,
-            ),
+            info,
             devEnv,
         )
     }
@@ -96,15 +92,14 @@ class PomeriumBasedAgentConnectionHandle(
     override suspend fun getAgentConnection(): AgentConnection {
         return try {
             logger.debug("$connectionLogPrefix: start")
-            val connectionData = connectionInfo
-            val agentRelayUrl = connectionData.agentRelayUrl
-            logger.info("Starting tunnel to remote address: $agentRelayUrl")
+            val (_, agentRelayUrl, agentRelayAuthData, pomeriumPort) = connectionInfo
+            logger.info("Starting agent tunnel to remote address: $agentRelayUrl")
             val route = URI(agentRelayUrl)
             tunnelRoute = route
 
             val port = tunneler.startTunnel(
                 route = route,
-                pomeriumPort = connectionData.pomeriumPort,
+                pomeriumPort = pomeriumPort,
 
             )
             logger.info("Starting connecting to port: ${port}")
@@ -119,10 +114,10 @@ class PomeriumBasedAgentConnectionHandle(
             agentSocket = currentSocket
 
             val output = currentSocket.getOutputStream()
-            connectionData.agentRelayAuthData?.let {
+            agentRelayAuthData?.let {
                 logger.info("Sending auth data to agent")
                 output.write("$it".toByteArray(Charsets.UTF_8))
-                //output.flush()
+                output.flush()
             }
             AgentConnection(currentSocket.getInputStream(), output)
         } catch (e: Throwable) {
