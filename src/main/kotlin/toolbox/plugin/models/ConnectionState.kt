@@ -13,7 +13,6 @@ data class DevEnvConnectionInfo (
 )
 
 data class PomeriumLink(
-    val route: URI,
     val pomeriumInstance: String?,
     val pomeriumPort: Int
 )

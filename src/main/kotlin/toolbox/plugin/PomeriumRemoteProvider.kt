@@ -143,7 +143,6 @@ class PomeriumRemoteProvider(
         val agentConnectionAuth = params["agentAuth"]?.trim() ?: error("Missing agent connectionAuth")
 
         val link = PomeriumLink(
-          route = pomeriumRoute,
           pomeriumInstance = pomeriumInstance,
           pomeriumPort = pomeriumPort)
 
