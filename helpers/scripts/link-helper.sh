@@ -167,7 +167,7 @@ main() {
   local connection_key_default="${CONNECTION_KEY:-tcp://0.0.0.0:5990#jt=ca7cd969-f4dc-4d58-bdad-3ab4f3f9e8d6&p=IU&fp=E80F9EA7A46A357ED269F7F9F7E628F0A70BB6251A69E96F86DB658A96029140&cb=253.32098.37&newUi=true&jb=21.0.10b1163.110}"
   local agent_auth_file_default="${AGENT_AUTH:-}"
   local agent_port_default="${AGENT_TCP_LISTEN_ON_PORT:-}"
-  local agent_forward_port_default="${AGENT_FORWARD_PORT:-44000}"
+  local agent_forward_port_default="${AGENT_FORWARD_PORT:-}"
   local backend_forward_port_default="${BACKEND_FORWARD_PORT:-5990}"
 
   if [[ -n "$agent_auth_file_default" ]]; then

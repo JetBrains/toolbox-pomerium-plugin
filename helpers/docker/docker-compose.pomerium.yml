@@ -4,8 +4,12 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     image: helpers-upstream:latest
+    environment:
+      USE_HOST_TBCLI: "${USE_HOST_TBCLI:-1}"
+      HOST_TBCLI_DIR: /opt/helpers/host-tbcli
     volumes:
       - ../state/link-helper.defaults.real.env:/opt/helpers/state/link-helper.defaults.real.env:ro
+      - "${HOST_TBCLI_ROOT:-/tmp}:/opt/helpers/host-tbcli:ro"
     ports:
       - "2223:22"
       - "5990:5990"

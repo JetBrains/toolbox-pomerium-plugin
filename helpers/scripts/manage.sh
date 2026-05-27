@@ -3,45 +3,225 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+MANAGE_LOCAL_ENV_FILE="${MANAGE_LOCAL_ENV_FILE:-$SCRIPT_DIR/../state/manage.local.env}"
+
+if [[ -f "$MANAGE_LOCAL_ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$MANAGE_LOCAL_ENV_FILE"
+fi
+
 PASSWORD="${PASSWORD:-dev}"
 POMERIUM_COMPOSE_FILE="${POMERIUM_COMPOSE_FILE:-$SCRIPT_DIR/../docker/docker-compose.pomerium.yml}"
 COMPOSE_SERVICE="${COMPOSE_SERVICE:-helpers-upstream}"
 HOST_FRONTEND_LOGS_DIR="${HOST_FRONTEND_LOGS_DIR:-$HOME/Library/Logs/JetBrains/IntelliJIdea2025.3/frontend}"
 HOST_TOOLBOX_LOGS_DIR="${HOST_TOOLBOX_LOGS_DIR:-$HOME/Library/Logs/JetBrains/Toolbox}"
+DEFAULT_HOST_TBCLI_SEARCH_ROOT="$HOME/Library/Caches/JetBrains/MonorepoBazel"
+HOST_TBCLI_SOURCE_PATH="${HOST_TBCLI_SOURCE_PATH:-}"
+HOST_TBCLI_SEARCH_ROOT="${HOST_TBCLI_SEARCH_ROOT:-$DEFAULT_HOST_TBCLI_SEARCH_ROOT}"
+USE_HOST_TBCLI="${USE_HOST_TBCLI:-1}"
+HOST_TBCLI_FALLBACK_ROOT="${HOST_TBCLI_FALLBACK_ROOT:-$SCRIPT_DIR/../state}"
+HOST_TBCLI_ROOT=""
+DEFAULT_HOST_IDEA_ARTIFACTS_DIR=""
+HOST_IDEA_ARTIFACTS_DIR="${HOST_IDEA_ARTIFACTS_DIR:-$DEFAULT_HOST_IDEA_ARTIFACTS_DIR}"
+HOST_IDEA_DIST_ARCHIVE="${HOST_IDEA_DIST_ARCHIVE:-}"
+IDEA_DIST_STAGING_DIR="${IDEA_DIST_STAGING_DIR:-$SCRIPT_DIR/../state/docker-build/idea-dist}"
 
 usage() {
   cat <<'EOF'
 Usage:
-  ./manage.sh recreate
-  ./manage.sh restart-agent
-  ./manage.sh stop-agent
-  ./manage.sh logs
-  ./manage.sh print-client-log-path
-  ./manage.sh print-client-link
-  ./manage.sh print-host-client-log-path
-  ./manage.sh print-host-client-link
-  ./manage.sh print-host-toolbox-tunnel-lines [--with-paths]
-  ./manage.sh find-join-link [--with-paths]
-  ./manage.sh print-link
-  ./manage.sh print-json
-  ./manage.sh check-current-link
-  ./manage.sh check-connect [agent|backend]
-  ./manage.sh check-auth <auth> [port]
-  ./manage.sh check-auth '<jetbrains://...>'
-  ./manage.sh check-auth-wrong [<jetbrains://...>]
-  ./manage.sh probe-raw <auth> [port]
-  ./manage.sh probe-raw '<jetbrains://...>' [port]
-  ./manage.sh probe-current-link [connect-target]
-  ./manage.sh probe-connect '<jetbrains://...>' [connect-target]
-  ./manage.sh compare-current-link [raw-port] [connect-target]
-  ./manage.sh clear-pomerium-jwt
-  ./manage.sh shell
-  ./manage.sh help
+  ./manage.sh [--use-host-tbcli] [--host-tbcli-path PATH] <command>
+  ./manage.sh --download-tbcli <command>
+
+Commands:
+  recreate
+  restart-agent
+  stop-agent
+  logs
+  print-client-log-path
+  print-client-link
+  print-host-client-log-path
+  print-host-client-link
+  print-host-toolbox-tunnel-lines [--with-paths]
+  find-join-link [--with-paths]
+  print-link
+  print-json
+  check-current-link
+  check-connect [agent|backend]
+  check-auth <auth> [port]
+  check-auth '<jetbrains://...>'
+  check-auth-wrong [<jetbrains://...>]
+  probe-raw <auth> [port]
+  probe-raw '<jetbrains://...>' [port]
+  probe-current-link [connect-target]
+  probe-connect '<jetbrains://...>' [connect-target]
+  compare-current-link [raw-port] [connect-target]
+  clear-pomerium-jwt
+  shell
+  help
+
+Flags:
+  --use-host-tbcli
+  --download-tbcli
+  --host-tbcli-path PATH
+
+Defaults:
+  local env file: helpers/state/manage.local.env
+  host tbcli mode: enabled
+  host tbcli path: auto-discovered under ~/Library/Caches/JetBrains/MonorepoBazel
+  IDEA artifacts dir: configure in helpers/state/manage.local.env or HOST_IDEA_ARTIFACTS_DIR
 EOF
 }
 
+discover_host_tbcli_source_path() {
+  python3 - <<'PY' "$HOST_TBCLI_SEARCH_ROOT"
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1]).expanduser()
+if not root.is_dir():
+    raise SystemExit(1)
+
+pattern = "*/execroot/_main/bazel-out/*/bin/toolbox/cli/distribution/layout_cli_host_nojre/tbcli/bin"
+candidates = []
+for path in root.glob(pattern):
+    tbcli = path / "tbcli"
+    try:
+        if path.is_dir() and tbcli.is_file() and tbcli.stat().st_size > 0:
+            candidates.append((tbcli.stat().st_mtime, path))
+    except OSError:
+        pass
+
+if not candidates:
+    raise SystemExit(1)
+
+candidates.sort(reverse=True)
+print(candidates[0][1])
+PY
+}
+
+resolve_host_tbcli_root() {
+  local source_path="$1"
+
+  if [[ -d "$source_path" ]] && [[ -x "$source_path/tbcli" ]]; then
+    (
+      cd "$source_path/.." >/dev/null 2>&1
+      pwd
+    )
+    return 0
+  fi
+
+  if [[ -d "$source_path" ]] && [[ -x "$source_path/bin/tbcli" ]]; then
+    (
+      cd "$source_path" >/dev/null 2>&1
+      pwd
+    )
+    return 0
+  fi
+
+  if [[ -f "$source_path" ]] && [[ -x "$source_path" ]] && [[ "$(basename "$source_path")" == "tbcli" ]]; then
+    (
+      cd "$(dirname "$source_path")/.." >/dev/null 2>&1
+      pwd
+    )
+    return 0
+  fi
+
+  return 1
+}
+
+prepare_compose_environment() {
+  if [[ "$USE_HOST_TBCLI" == "1" ]]; then
+    local host_tbcli_source_path="$HOST_TBCLI_SOURCE_PATH"
+    if [[ -z "$host_tbcli_source_path" ]]; then
+      host_tbcli_source_path="$(discover_host_tbcli_source_path 2>/dev/null || true)"
+    fi
+
+    if [[ -z "$host_tbcli_source_path" ]] || ! HOST_TBCLI_ROOT="$(resolve_host_tbcli_root "$host_tbcli_source_path")"; then
+      echo "[manage] host tbcli path is invalid or could not be auto-discovered" >&2
+      echo "[manage] HOST_TBCLI_SEARCH_ROOT=$HOST_TBCLI_SEARCH_ROOT" >&2
+      echo "[manage] expected one of:" >&2
+      echo "[manage]   - a tbcli root containing bin/tbcli" >&2
+      echo "[manage]   - a bin directory containing tbcli" >&2
+      echo "[manage]   - a direct path to the tbcli executable" >&2
+      echo "[manage] set HOST_TBCLI_SOURCE_PATH or pass --host-tbcli-path PATH to override" >&2
+      echo "[manage] use --download-tbcli to fall back to JetBrains download" >&2
+      exit 1
+    fi
+  else
+    HOST_TBCLI_ROOT="$HOST_TBCLI_FALLBACK_ROOT"
+  fi
+}
+
+resolve_host_idea_dist_archive() {
+  local explicit_archive="$1"
+  local artifacts_dir="$2"
+
+  if [[ -n "$explicit_archive" ]]; then
+    [[ -f "$explicit_archive" ]] || return 1
+    printf '%s\n' "$explicit_archive"
+    return 0
+  fi
+
+  python3 - <<'PY' "$artifacts_dir"
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1]).expanduser()
+if not root.is_dir():
+    raise SystemExit(1)
+
+candidates = sorted(root.glob("ideaIU-*-aarch64.tar.gz"), key=lambda p: p.stat().st_mtime, reverse=True)
+if not candidates:
+    raise SystemExit(1)
+
+print(candidates[0])
+PY
+}
+
+stage_idea_distribution() {
+  local source_archive=""
+  source_archive="$(resolve_host_idea_dist_archive "$HOST_IDEA_DIST_ARCHIVE" "$HOST_IDEA_ARTIFACTS_DIR")" || {
+    echo "[manage] failed to resolve IDEA distribution archive from $HOST_IDEA_ARTIFACTS_DIR" >&2
+    echo "[manage] set HOST_IDEA_DIST_ARCHIVE to an explicit .tar.gz if needed" >&2
+    exit 1
+  }
+
+  python3 - <<'PY' "$source_archive" "$IDEA_DIST_STAGING_DIR"
+import os
+import pathlib
+import shutil
+import sys
+
+source = pathlib.Path(sys.argv[1]).expanduser()
+staging_dir = pathlib.Path(sys.argv[2]).expanduser()
+target = staging_dir / source.name
+meta = staging_dir / ".source-path"
+
+staging_dir.mkdir(parents=True, exist_ok=True)
+
+if target.exists():
+    src_stat = source.stat()
+    dst_stat = target.stat()
+    if src_stat.st_size == dst_stat.st_size and int(src_stat.st_mtime) == int(dst_stat.st_mtime):
+        meta.write_text(str(source) + "\n", encoding="utf-8")
+        print(target)
+        raise SystemExit(0)
+
+for existing in staging_dir.glob("*"):
+    if existing.is_file() or existing.is_symlink():
+        existing.unlink()
+    elif existing.is_dir():
+        shutil.rmtree(existing)
+
+shutil.copy2(source, target)
+meta.write_text(str(source) + "\n", encoding="utf-8")
+print(target)
+PY
+}
+
 compose() {
-  docker compose -f "$POMERIUM_COMPOSE_FILE" "$@"
+  prepare_compose_environment
+  USE_HOST_TBCLI="$USE_HOST_TBCLI" HOST_TBCLI_ROOT="$HOST_TBCLI_ROOT" docker compose -f "$POMERIUM_COMPOSE_FILE" "$@"
 }
 
 REAL_SERVICES="helpers-upstream keycloak verify real-pomerium"
@@ -55,6 +235,7 @@ ensure_compose_file() {
 
 build_image() {
   ensure_compose_file
+  stage_idea_distribution >/dev/null
   compose build "$COMPOSE_SERVICE"
 }
 
@@ -804,7 +985,40 @@ if "200" not in response.splitlines()[0]:
 PY
 }
 
-case "${1:-}" in
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --use-host-tbcli)
+      USE_HOST_TBCLI="1"
+      shift
+      ;;
+    --download-tbcli)
+      USE_HOST_TBCLI="0"
+      shift
+      ;;
+    --host-tbcli-path)
+      [[ $# -ge 2 ]] || {
+        echo "Usage: ./manage.sh --host-tbcli-path PATH <command>" >&2
+        exit 1
+      }
+      HOST_TBCLI_SOURCE_PATH="$2"
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      usage
+      exit 1
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+case "${1:-help}" in
   recreate)
     recreate
     ;;
@@ -847,7 +1061,8 @@ case "${1:-}" in
     check_current_link
     ;;
   check-connect)
-    check_connect "${2:-agent}"
+    shift
+    check_connect "${1:-agent}"
     ;;
   check-auth)
     shift

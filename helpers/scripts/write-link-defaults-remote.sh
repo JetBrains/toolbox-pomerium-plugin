@@ -141,7 +141,7 @@ if [[ -n "$TB_JAVA_HOME" ]]; then
 fi
 
 if [[ -n "$AGENT_TCP_LISTEN_ON_PORT" ]]; then
-  nohup "$REMOTE_TBCLI_PATH" agent --tcp-listen-on-port="$AGENT_TCP_LISTEN_ON_PORT" >> "$REMOTE_TOOLBOX_DATA_DIR/agent.log" 2>&1 < /dev/null &
+  nohup "$REMOTE_TBCLI_PATH" agent --tcp-listen-on-address=0.0.0.0 --tcp-listen-on-port="$AGENT_TCP_LISTEN_ON_PORT" >> "$REMOTE_TOOLBOX_DATA_DIR/agent.log" 2>&1 < /dev/null &
 else
   nohup "$REMOTE_TBCLI_PATH" agent >> "$REMOTE_TOOLBOX_DATA_DIR/agent.log" 2>&1 < /dev/null &
 fi

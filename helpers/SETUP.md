@@ -269,7 +269,12 @@ agent.localhost:443   -> helpers-upstream:44000
 
 The runtime settings live in:
 
-- [link-helper.defaults.real.env](/Users/Alisa.Afonina/work/toolbox/toolbox-pomerium-plugin/helpers/state/link-helper.defaults.real.env)
+- [link-helper.defaults.real.env](state/link-helper.defaults.real.env)
+
+Machine-specific host paths for `manage.sh` live in:
+
+- `helpers/state/manage.local.env`
+- start from [manage.local.env.example](state/manage.local.env.example)
 
 ### `AGENT_TCP_LISTEN_ON_PORT`
 
@@ -417,7 +422,8 @@ Look at:
 If you just want the setup running again:
 
 ```bash
-cd /Users/Alisa.Afonina/work/toolbox/toolbox-pomerium-plugin/helpers/scripts
+cd helpers/scripts
+cp ../state/manage.local.env.example ../state/manage.local.env
 ./write-link-defaults.sh
 ./link-helper.sh
 ./manage.sh recreate

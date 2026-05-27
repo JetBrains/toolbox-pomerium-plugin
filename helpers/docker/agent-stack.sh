@@ -6,7 +6,10 @@ TBCLI_VERSION="${TBCLI_VERSION:-3.5.0.73530}"
 TOOLBOX_HOME="${TOOLBOX_HOME:-/home/$USERNAME}"
 TOOLBOX_DATA_DIR="${TOOLBOX_DATA_DIR:-$TOOLBOX_HOME/.local/share/JetBrains/Toolbox}"
 TOOLBOX_CACHE_DIR="${TOOLBOX_CACHE_DIR:-$TOOLBOX_HOME/.cache/JetBrains/Toolbox-CLI-dist}"
-TBCLI_DIR="$TOOLBOX_CACHE_DIR/tbcli-$TBCLI_VERSION"
+IDEA_DIST_ROOT="${IDEA_DIST_ROOT:-/opt/idea-dist}"
+USE_HOST_TBCLI="${USE_HOST_TBCLI:-1}"
+HOST_TBCLI_DIR="${HOST_TBCLI_DIR:-/opt/helpers/host-tbcli}"
+TBCLI_DIR="${TBCLI_DIR:-$TOOLBOX_CACHE_DIR/tbcli-$TBCLI_VERSION}"
 TB_CLI_PATH="${TB_CLI_PATH:-$TBCLI_DIR/bin/tbcli}"
 TB_JAVA_HOME="${TB_JAVA_HOME:-${JAVA_HOME:-}}"
 PORT_FILE="$TOOLBOX_DATA_DIR/.port"
@@ -16,6 +19,7 @@ FORWARD_AGENT_INFO="$TOOLBOX_DATA_DIR/forward-agent.json"
 FORWARD_5990_INFO="$TOOLBOX_DATA_DIR/forward-5990.json"
 LINK_FILE="$TOOLBOX_DATA_DIR/jetbrains-link.txt"
 RUNTIME_DEFAULTS_FILE="${RUNTIME_DEFAULTS_FILE:-/opt/helpers/state/link-helper.defaults.real.env}"
+DISPLAY_NAME_STATE_FILE="${DISPLAY_NAME_STATE_FILE:-$TOOLBOX_DATA_DIR/.display-name}"
 
 CLIENT_POMERIUM_ROUTE="${CLIENT_POMERIUM_ROUTE:-}"
 CONNECTION_KEY="${CONNECTION_KEY:-tcp%3A%2F%2F0.0.0.0%3A5990%23jt%3Dca7cd969-f4dc-4d58-bdad-3ab4f3f9e8d6%26p%3DIU%26fp%3DE80F9EA7A46A357ED269F7F9F7E628F0A70BB6251A69E96F86DB658A96029140%26cb%3D253.32098.37%26newUi%3Dtrue%26jb%3D21.0.10b1163.110}"
@@ -23,8 +27,10 @@ POMERIUM_PORT="${POMERIUM_PORT:-}"
 DISPLAY_NAME="${DISPLAY_NAME:-}"
 AGENT_CONNECTION_URL="${AGENT_CONNECTION_URL:-}"
 POMERIUM_STACK_MODE="${POMERIUM_STACK_MODE:-mock}"
-AGENT_TCP_LISTEN_ON_PORT="${AGENT_TCP_LISTEN_ON_PORT:-}"
-AGENT_FORWARD_PORT="${AGENT_FORWARD_PORT:-44000}"
+# Bind Toolbox Agent directly on 44000 so the agent bridge is not needed by default.
+# To re-enable the bridge: set AGENT_FORWARD_PORT=44000 and AGENT_TCP_LISTEN_ON_PORT= (empty).
+AGENT_TCP_LISTEN_ON_PORT="${AGENT_TCP_LISTEN_ON_PORT:-44000}"
+AGENT_FORWARD_PORT="${AGENT_FORWARD_PORT:-}"
 BACKEND_FORWARD_PORT="${BACKEND_FORWARD_PORT:-5990}"
 
 log() {
@@ -44,6 +50,83 @@ apply_pomerium_mode_defaults() {
       : "${AGENT_CONNECTION_URL:=https%3A%2F%2Flocalhost%3A44000}"
       ;;
   esac
+}
+
+generate_display_name() {
+  python3 - <<'PY'
+import secrets
+print(f"Pomerium Dev {secrets.token_hex(3)}")
+PY
+}
+
+load_display_name_state() {
+  [[ -f "$DISPLAY_NAME_STATE_FILE" ]] || return 0
+
+  local cached_display_name=""
+  IFS= read -r cached_display_name < "$DISPLAY_NAME_STATE_FILE" || true
+  if [[ -n "$cached_display_name" ]]; then
+    DISPLAY_NAME="$cached_display_name"
+  fi
+}
+
+save_display_name_state() {
+  [[ -n "${DISPLAY_NAME:-}" ]] || return 0
+
+  mkdir -p "$(dirname "$DISPLAY_NAME_STATE_FILE")"
+  printf '%s\n' "$DISPLAY_NAME" > "$DISPLAY_NAME_STATE_FILE"
+}
+
+save_display_name_defaults() {
+  [[ -n "${DISPLAY_NAME:-}" ]] || return 0
+
+  local defaults_dir
+  defaults_dir="$(dirname "$RUNTIME_DEFAULTS_FILE")"
+
+  if [[ -e "$RUNTIME_DEFAULTS_FILE" ]]; then
+    [[ -w "$RUNTIME_DEFAULTS_FILE" ]] || return 0
+  else
+    [[ -d "$defaults_dir" ]] || return 0
+    [[ -w "$defaults_dir" ]] || return 0
+  fi
+
+  python3 - <<'PY' "$RUNTIME_DEFAULTS_FILE" "$DISPLAY_NAME"
+import pathlib
+import shlex
+import sys
+
+path = pathlib.Path(sys.argv[1])
+display_name = sys.argv[2]
+line_value = f"DISPLAY_NAME={shlex.quote(display_name)}"
+
+lines = []
+if path.exists():
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+
+updated = False
+for index, line in enumerate(lines):
+    if line.lstrip().startswith("DISPLAY_NAME="):
+        lines[index] = line_value
+        updated = True
+        break
+
+if not updated:
+    lines.append(line_value)
+
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+PY
+}
+
+ensure_display_name() {
+  if [[ -z "${DISPLAY_NAME:-}" ]]; then
+    load_display_name_state
+  fi
+
+  if [[ -z "${DISPLAY_NAME:-}" ]]; then
+    DISPLAY_NAME="$(generate_display_name)"
+    save_display_name_state
+    save_display_name_defaults
+  fi
 }
 
 load_runtime_defaults() {
@@ -95,6 +178,17 @@ fail() {
     tail -n 200 "$AGENT_LOG" || true
   fi
   exit 1
+}
+
+resolve_tbcli() {
+  if [[ "$USE_HOST_TBCLI" == "1" ]]; then
+    TBCLI_DIR="$HOST_TBCLI_DIR"
+    TB_CLI_PATH="$TBCLI_DIR/bin/tbcli"
+    [[ -x "$TB_CLI_PATH" ]] || fail "host-mounted tbcli was requested but not found at $TB_CLI_PATH"
+    return
+  fi
+
+  [[ -x "$TB_CLI_PATH" ]] || fail "tbcli is not available at $TB_CLI_PATH"
 }
 
 fix_ownership() {
@@ -152,7 +246,7 @@ start_agent() {
   log "Starting Toolbox Agent via $TB_CLI_PATH"
   local agent_args="agent"
   if [[ -n "$AGENT_TCP_LISTEN_ON_PORT" ]]; then
-    agent_args="agent --tcp-listen-on-port=$AGENT_TCP_LISTEN_ON_PORT"
+    agent_args="$agent_args --tcp-listen-on-address=0.0.0.0 --tcp-listen-on-port=$AGENT_TCP_LISTEN_ON_PORT"
   fi
   su - "$USERNAME" -c \
     "export TB_CLI_PATH='$TB_CLI_PATH'; export TB_JAVA_HOME='$TB_JAVA_HOME'; nohup '$TB_CLI_PATH' $agent_args >> '$AGENT_LOG' 2>&1 < /dev/null &"
@@ -261,9 +355,12 @@ PY
 
 print_outputs() {
   apply_pomerium_mode_defaults
+  load_runtime_defaults
+  ensure_display_name
   python3 - <<'PY' "$AGENT_INFO" "$FORWARD_AGENT_INFO" "$TBCLI_VERSION" "$TB_CLI_PATH" "$PORT_FILE" "$LINK_FILE" "$CLIENT_POMERIUM_ROUTE" "$CONNECTION_KEY" "$POMERIUM_PORT" "$DISPLAY_NAME" "$AGENT_CONNECTION_URL"
 import json
 import sys
+from urllib.parse import quote
 
 agent = json.load(open(sys.argv[1], encoding="utf-8"))
 forward = json.load(open(sys.argv[2], encoding="utf-8"))
@@ -276,7 +373,7 @@ link = (
     f"&pomeriumPort={sys.argv[9]}"
 )
 if sys.argv[10]:
-    link += f"&displayName={sys.argv[10]}"
+    link += f"&displayName={quote(sys.argv[10], safe='')}"
 link += (
     f"&agentConnectionUrl={sys.argv[11]}"
     f"&agentAuth={agent.get('authToken', '')}"
@@ -310,9 +407,12 @@ PY
 
 print_link_only() {
   apply_pomerium_mode_defaults
+  load_runtime_defaults
+  ensure_display_name
   python3 - <<'PY' "$AGENT_INFO" "$LINK_FILE" "$CLIENT_POMERIUM_ROUTE" "$CONNECTION_KEY" "$POMERIUM_PORT" "$DISPLAY_NAME" "$AGENT_CONNECTION_URL"
 import json
 import sys
+from urllib.parse import quote
 
 agent = json.load(open(sys.argv[1], encoding="utf-8"))
 link_path = sys.argv[2]
@@ -324,7 +424,7 @@ link = (
     f"&pomeriumPort={sys.argv[5]}"
 )
 if sys.argv[6]:
-    link += f"&displayName={sys.argv[6]}"
+    link += f"&displayName={quote(sys.argv[6], safe='')}"
 link += (
     f"&agentConnectionUrl={sys.argv[7]}"
     f"&agentAuth={agent.get('authToken', '')}"
@@ -340,10 +440,14 @@ PY
 }
 
 start_stack() {
+  resolve_tbcli
   apply_pomerium_mode_defaults
   load_runtime_defaults
+  ensure_display_name
   resolve_java_home
   log "Using TB_JAVA_HOME=$TB_JAVA_HOME"
+  log "Using tbcli at $TB_CLI_PATH"
+  log "Toolbox additional tool path=$IDEA_DIST_ROOT"
   log "Pomerium stack mode=$POMERIUM_STACK_MODE clientRoute=$CLIENT_POMERIUM_ROUTE"
   if [[ -n "$AGENT_TCP_LISTEN_ON_PORT" ]]; then
     log "Toolbox Agent fixed tcp listen port=$AGENT_TCP_LISTEN_ON_PORT"
@@ -385,6 +489,8 @@ start_stack() {
   log "Stack startup complete"
   log "Use 'agent-stack.sh print-json' or 'agent-stack.sh print-link' to inspect live connection details explicitly"
 }
+
+resolve_tbcli
 
 case "${1:-start}" in
   start)

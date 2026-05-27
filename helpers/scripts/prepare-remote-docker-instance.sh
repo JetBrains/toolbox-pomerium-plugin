@@ -36,7 +36,7 @@ REMOTE_TOOLBOX_HOME='/home/dev'
 REMOTE_TOOLBOX_DATA_DIR='/home/dev/.local/share/JetBrains/Toolbox'
 REMOTE_TOOLBOX_CACHE_DIR='/home/dev/.cache/JetBrains/Toolbox-CLI-dist'
 
-TBCLI_VERSION='3.5.0.73530'
+TBCLI_VERSION='3.6.0.84134'
 TB_JAVA_HOME=''
 
 REMOTE_JOIN_LINK_COMMAND=''

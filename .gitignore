@@ -28,7 +28,9 @@ toolbox-plugin.properties
 helpers/state/link-helper.defaults.real.env
 helpers/state/remote-instance.env
 helpers/state/pomerium-real.local.env
+helpers/state/manage.local.env
 helpers/state/.cache/
+helpers/state/docker-build/
 helpers/pomerium/real/config.yaml
 helpers/pomerium/real/certs/*.pem
 !helpers/pomerium/real/certs/.gitkeep

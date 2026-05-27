@@ -17,12 +17,13 @@ Link shape:
 
 Start here:
 
-- [SETUP.md](/Users/Alisa.Afonina/work/toolbox/toolbox-pomerium-plugin/helpers/SETUP.md)
+- [SETUP.md](SETUP.md)
 
 Most common commands:
 
 ```bash
 cd helpers/scripts
+cp ../state/manage.local.env.example ../state/manage.local.env
 ./write-link-defaults.sh
 ./link-helper.sh
 ./manage.sh recreate
@@ -55,10 +56,11 @@ Generate local dev Pomerium secrets and certs:
 
 Main scripts:
 
-- [manage.sh](/Users/Alisa.Afonina/work/toolbox/toolbox-pomerium-plugin/helpers/scripts/manage.sh)
-- [write-link-defaults.sh](/Users/Alisa.Afonina/work/toolbox/toolbox-pomerium-plugin/helpers/scripts/write-link-defaults.sh)
-- [link-helper.sh](/Users/Alisa.Afonina/work/toolbox/toolbox-pomerium-plugin/helpers/scripts/link-helper.sh)
-- [link-helper.defaults.real.env](/Users/Alisa.Afonina/work/toolbox/toolbox-pomerium-plugin/helpers/state/link-helper.defaults.real.env)
-- [remote-instance.env.example](/Users/Alisa.Afonina/work/toolbox/toolbox-pomerium-plugin/helpers/state/remote-instance.env.example)
-- [install-tbcli-remote.sh](/Users/Alisa.Afonina/work/toolbox/toolbox-pomerium-plugin/helpers/scripts/install-tbcli-remote.sh)
-- [write-link-defaults-remote.sh](/Users/Alisa.Afonina/work/toolbox/toolbox-pomerium-plugin/helpers/scripts/write-link-defaults-remote.sh)
+- [manage.sh](scripts/manage.sh)
+- [write-link-defaults.sh](scripts/write-link-defaults.sh)
+- [link-helper.sh](scripts/link-helper.sh)
+- [link-helper.defaults.real.env](state/link-helper.defaults.real.env)
+- [manage.local.env.example](state/manage.local.env.example)
+- [remote-instance.env.example](state/remote-instance.env.example)
+- [install-tbcli-remote.sh](scripts/install-tbcli-remote.sh)
+- [write-link-defaults-remote.sh](scripts/write-link-defaults-remote.sh)
