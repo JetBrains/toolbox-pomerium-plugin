@@ -14,6 +14,7 @@ import toolbox.plugin.connection.PomeriumHostTunnelConnector
 import toolbox.plugin.models.DevEnvConnectionInfo
 import toolbox.plugin.models.EnvironmentState
 import toolbox.plugin.models.PomeriumEnvironment
+import toolbox.plugin.models.toEnvironmentState
 import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -42,15 +43,18 @@ class PomeriumEnvironmentContentsView(
         }
 
 
-    override val ideListState: StateFlow<LoadableState<List<CachedIdeStub>>> =
+    override val ideListState: MutableStateFlow<LoadableState<List<CachedIdeStub>>> =
         MutableStateFlow(LoadableState.Value(listOf()))
 
-    override val projectListState: kotlinx.coroutines.flow.Flow<LoadableState<List<CachedProject>>>
+    override val projectListState: MutableStateFlow<LoadableState<List<CachedProject>>>
         get() = MutableStateFlow(LoadableState.Value(listOf()))
 
 
+    fun updateProjects() {
+        projectListState.value = LoadableState.Value(devEnv.getProjects())
+    }
     override fun getHostTunnelConnector(): HostTunnelConnector {
-        return PomeriumHostTunnelConnector(tunneler, info, logger)
+        return PomeriumHostTunnelConnector(tunneler, info, devEnv, pluginScope, logger)
     }
 
     override fun getAgentConnectionHandle(redeploy: Boolean): AgentConnectionHandle {
@@ -99,8 +103,9 @@ class PomeriumBasedAgentConnectionHandle(
 
             val port = tunneler.startTunnel(
                 route = route,
+                authScope = agentConnectionScope,
                 pomeriumPort = pomeriumPort,
-
+                onStateChange = { devEnv.setEnvironmentState(it.toEnvironmentState()) },
             )
             logger.info("Starting connecting to port: ${port}")
 

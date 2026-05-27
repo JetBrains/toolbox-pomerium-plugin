@@ -51,26 +51,32 @@ class PomeriumTunneler(
 
     suspend fun startTunnel(
         route: URI,
+        authScope: CoroutineScope,
         pomeriumHost: String = route.host,
         pomeriumPort: Int = 443,
         useTls: Boolean = true,
-        ensureUpstreamReady: Boolean = false
+        ensureUpstreamReady: Boolean = false,
+        onStateChange: (PomeriumTunnelState) -> Unit = {},
         ): Int = withContext(Dispatchers.Default) {
         routeLocks.computeIfAbsent(route) { Mutex() }.withLock {
             activeTunnels[route]?.let { existing ->
                 if (existing.job.isActive) {
                     existing.references.incrementAndGet()
                     logger?.info("Reusing existing tunnel for $route on local port ${existing.port}")
+                    onStateChange(PomeriumTunnelState.Connected)
                     return@withLock existing.port
                 }
                 activeTunnels.remove(route, existing)
                 tunnelJobs.remove(route, existing.job)
             }
 
-            authProvider.getAuth(route).await() // Populate auth if required
+            onStateChange(PomeriumTunnelState.WaitingForAuthorization)
+            authProvider.getAuth(route, authScope).await() // Populate auth if required
+            //onStateChange(PomeriumTunnelState.Connecting)
             if (ensureUpstreamReady) {
                 logger?.info("Ensure upstream ready for $route")
-                ensureUpstreamReady(route, pomeriumHost, pomeriumPort, useTls)
+                ensureUpstreamReady(route, pomeriumHost, pomeriumPort, useTls, authScope, onStateChange)
+                onStateChange(PomeriumTunnelState.Connected)
             }
 
             val selectorManager = SelectorManager(Dispatchers.IO)
@@ -102,8 +108,8 @@ class PomeriumTunneler(
                                     var shouldRetry = false
                                     var isConnected = false
                                     val auth = try {
-                                        withTimeout(soTimeout) {
-                                            authProvider.getAuth(route).await()
+                                        withTimeout(soTimeout.milliseconds) {
+                                            authProvider.getAuth(route, authScope).await()
                                         }
                                     } catch (_: TimeoutCancellationException) {
                                         // If auth stalls, close this local exchange deterministically.
@@ -158,6 +164,7 @@ class PomeriumTunneler(
                                                 200 -> {
                                                     LOG.info("Pomerium tunnel established")
                                                     isConnected = true
+                                                    onStateChange(PomeriumTunnelState.Connected)
                                                     launch(Dispatchers.IO) {
                                                         try {
                                                             localReadChannel.joinTo(writeChannel, true)
@@ -190,12 +197,14 @@ class PomeriumTunneler(
 
                                                 301, 302, 307, 308 -> {
                                                     LOG.info("Pomerium token expired. Refreshing...")
+                                                    onStateChange(PomeriumTunnelState.RefreshingAuthorization)
                                                     authProvider.invalidate(route)
                                                     shouldRetry = true
                                                 }
 
                                                 503 -> {
                                                     LOG.debug("Pomerium returned service unavailable, trying after delay")
+                                                    onStateChange(PomeriumTunnelState.PomeriumUnavailable)
                                                     delay(30.seconds)
                                                     shouldRetry = true
                                                 }
@@ -206,6 +215,7 @@ class PomeriumTunneler(
                                                         it?.asRawString(Charset.defaultCharset())
                                                     }
                                                     LOG.error("Unknown status code returned from Pomerium: ${response.statusCode} message: $body")
+                                                    onStateChange(PomeriumTunnelState.PomeriumTunnelCreationError)
                                                 }
                                             }
                                         }
@@ -318,15 +328,24 @@ class PomeriumTunneler(
         pomeriumHost: String,
         pomeriumPort: Int,
         useTls: Boolean,
+        authScope: CoroutineScope,
+        onStateChange: (PomeriumTunnelState) -> Unit = {},
     ) {
         val maxAttempts = 10
         repeat(maxAttempts) { attempt ->
-            when (probeConnect(route, pomeriumHost, pomeriumPort, useTls)) {
+            when (probeConnect(route, pomeriumHost, pomeriumPort, useTls, authScope, onStateChange)) {
                 ConnectProbeResult.Ready -> return
-                ConnectProbeResult.RetryShort -> delay(250)
-                ConnectProbeResult.RetryLong -> delay(1.seconds)
+                ConnectProbeResult.RetryShort -> {
+                    onStateChange(PomeriumTunnelState.UpstreamNotReady)
+                    delay(250)
+                }
+                ConnectProbeResult.RetryLong -> {
+                    onStateChange(PomeriumTunnelState.Reconnecting)
+                    delay(1.seconds)
+                }
             }
             if (attempt == maxAttempts - 1) {
+                onStateChange(PomeriumTunnelState.PomeriumTunnelCreationError)
                 throw PomeriumTunnelCreationException("Failed to prepare upstream CONNECT for route: $route")
             }
         }
@@ -337,11 +356,13 @@ class PomeriumTunneler(
         pomeriumHost: String,
         pomeriumPort: Int,
         useTls: Boolean,
+        authScope: CoroutineScope,
+        onStateChange: (PomeriumTunnelState) -> Unit = {},
     ): ConnectProbeResult {
         val selectorManager = SelectorManager(Dispatchers.IO)
         return try {
             val auth = withTimeout(soTimeout) {
-                authProvider.getAuth(route).await()
+                authProvider.getAuth(route, authScope).await()
             }
             aSocket(selectorManager)
                 .tcp()
@@ -378,17 +399,20 @@ class PomeriumTunneler(
                         200 -> ConnectProbeResult.Ready
                         301, 302, 307, 308 -> {
                             LOG.info("Pomerium token expired during preflight. Refreshing...")
+                            onStateChange(PomeriumTunnelState.RefreshingAuthorization)
                             authProvider.invalidate(route)
                             ConnectProbeResult.RetryShort
                         }
                         503 -> {
                             LOG.info("Pomerium unavailable during preflight, retrying...")
+                            onStateChange(PomeriumTunnelState.PomeriumUnavailable)
                             ConnectProbeResult.RetryLong
                         }
                         else -> {
                             val body = response.body.getOrNull().use {
                                 it?.asRawString(Charset.defaultCharset())
                             }
+                            onStateChange(PomeriumTunnelState.PomeriumTunnelCreationError)
                             throw PomeriumTunnelCreationException(
                                 "Preflight CONNECT failed with status ${response.statusCode} for $route, body: $body"
                             )
@@ -434,3 +458,15 @@ sealed class PomeriumTunnelException(message: String, cause: Throwable? = null) 
 class PomeriumUnavailableException(message: String, cause: Throwable? = null) : PomeriumTunnelException(message, cause)
 class PomeriumAuthorizationException(message: String, cause: Throwable? = null) : PomeriumTunnelException(message, cause)
 class PomeriumTunnelCreationException(message: String, cause: Throwable? = null) : PomeriumTunnelException(message, cause)
+
+sealed interface PomeriumTunnelState {
+    data object WaitingForAuthorization : PomeriumTunnelState
+    data object Connecting : PomeriumTunnelState
+    data object Connected : PomeriumTunnelState
+    data object RefreshingAuthorization : PomeriumTunnelState
+    data object Reconnecting : PomeriumTunnelState
+    data object UpstreamNotReady : PomeriumTunnelState
+    data object PomeriumUnavailable : PomeriumTunnelState
+    data object PomeriumAuthorizationError : PomeriumTunnelState
+    data object PomeriumTunnelCreationError : PomeriumTunnelState
+}

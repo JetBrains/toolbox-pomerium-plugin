@@ -58,7 +58,9 @@ class PomeriumRemoteProvider(
     )
     private val _envs = mutableMapOf<String, RemoteProviderEnvironment>()
 
-    override val environments: MutableStateFlow<LoadableState<List<RemoteProviderEnvironment>>> = MutableStateFlow(LoadableState.Loading)
+    override val environments: MutableStateFlow<LoadableState<List<RemoteProviderEnvironment>>> =
+        MutableStateFlow(LoadableState.Loading)
+
     init {
         environments.value = LoadableState.Loading
     }
@@ -80,6 +82,7 @@ class PomeriumRemoteProvider(
     override fun getNewEnvironmentUiPage(): UiPage? {
         return null//NewConnectionPage(tunneler, i18n, i18n.ptrl("New connection"))
     }
+
     private val state = ConnectionState()
     private val visiblePage = state.authState.combine(state.agentState, { authState, agentState ->
         if (authState == AuthState.LoggedOut || agentState == AgentState.NotAvailable) {
@@ -88,7 +91,9 @@ class PomeriumRemoteProvider(
         return@combine ConnectionVisiblePage.Environment
     }).stateIn(scope, SharingStarted.Eagerly, ConnectionVisiblePage.Login)
 
-    override fun getOverrideUiPage(): UiPage? { return null }
+    override fun getOverrideUiPage(): UiPage? {
+        return null
+    }
 
     override suspend fun handleUri(uri: URI) {
         /*
@@ -129,8 +134,8 @@ class PomeriumRemoteProvider(
 
         val clientRoute = URI(rawRoute.toString())
 
-        val pomeriumInstance =params["pomeriumInstance"]?.takeIf { it.isNotBlank() }
-        val pomeriumPort =params["pomeriumPort"]?.toIntOrNull() ?: 443
+        val pomeriumInstance = params["pomeriumInstance"]?.takeIf { it.isNotBlank() }
+        val pomeriumPort = params["pomeriumPort"]?.toIntOrNull() ?: 443
         val name = params["displayName"].toString()
 
         val connectionLink = decodeUriIfNeeded(params["connectionKey"] ?: error("Missing connectionKey"))
@@ -151,8 +156,9 @@ class PomeriumRemoteProvider(
         val agentConnectionAuth = params["agentAuth"]?.trim() ?: error("Missing agent connectionAuth")
 
         val link = PomeriumLink(
-          pomeriumInstance = pomeriumInstance,
-          pomeriumPort = pomeriumPort)
+            pomeriumInstance = pomeriumInstance,
+            pomeriumPort = pomeriumPort
+        )
 
         val pomeriumEnvironment = PomeriumEnvironment(
             name,
@@ -174,11 +180,10 @@ class PomeriumRemoteProvider(
         environmentUiPageManager.showPluginEnvironmentsPage(true)
         toolboxUi.showWindowSuspending()
         pomeriumEnvironment.connect {
-            /* if(!connectionLink.isNullOrBlank())
+            if (!connectionLink.isNullOrBlank())
                 if (!p.isNullOrBlank() && !cb.isNullOrBlank()) {
                     clientHelper.connectToIde(pomeriumEnvironment.id, "$p-$cb", null)
                 }
-            }*/
         }
     }
 

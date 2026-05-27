@@ -51,7 +51,7 @@ class PomeriumAuthProviderTest {
         val authService = PomeriumAuthProvider(credStore, NoOpAuthLinkHandler, server.port)
 
         val route = URI("http://localhost:${server.port}")
-        val authJob = authService.getAuth(route)
+        val authJob = authService.getAuth(route, backgroundScope)
         authJob.start()
 
         val request = server.takeRequest()
@@ -86,7 +86,7 @@ class PomeriumAuthProviderTest {
         val authService = PomeriumAuthProvider(InMemoryCredStore(), NoOpAuthLinkHandler, server.port)
 
         val route = URI("http://localhost:${server.port}")
-        Assertions.assertEquals(authService.getAuth(route), authService.getAuth(route))
+        Assertions.assertEquals(authService.getAuth(route, backgroundScope), authService.getAuth(route, backgroundScope))
     }
 
     @Test
@@ -99,8 +99,8 @@ class PomeriumAuthProviderTest {
         val authService = PomeriumAuthProvider(InMemoryCredStore(), NoOpAuthLinkHandler, server.port)
 
         Assertions.assertEquals(
-            authService.getAuth(URI("http://localhost:${server.port}")),
-            authService.getAuth(URI("http://localhost:${server.port}/differentPath"))
+            authService.getAuth(URI("http://localhost:${server.port}"), backgroundScope),
+            authService.getAuth(URI("http://localhost:${server.port}/differentPath"), backgroundScope)
         )
     }
 
@@ -114,8 +114,8 @@ class PomeriumAuthProviderTest {
         val authService = PomeriumAuthProvider(InMemoryCredStore(), NoOpAuthLinkHandler, server.port)
 
         Assertions.assertNotEquals(
-            authService.getAuth(URI("http://localhost:${server.port}")),
-            authService.getAuth(URI("http://localhost:${server.port}/differentPath"))
+            authService.getAuth(URI("http://localhost:${server.port}"), backgroundScope),
+            authService.getAuth(URI("http://localhost:${server.port}/differentPath"), backgroundScope)
         )
     }
 
@@ -130,9 +130,9 @@ class PomeriumAuthProviderTest {
 
         val route = URI("http://localhost:${server.port}")
 
-        val job = authService.getAuth(route)
+        val job = authService.getAuth(route, backgroundScope)
         authService.invalidate(route)
-        Assertions.assertNotEquals(job, authService.getAuth(route))
+        Assertions.assertNotEquals(job, authService.getAuth(route, backgroundScope))
     }
 
     @Test
@@ -201,7 +201,7 @@ class PomeriumAuthProviderTest {
 
         }
         val authService = PomeriumAuthProvider(InMemoryCredStore(), handler, server.port)
-        authService.getAuth(route)
+        authService.getAuth(route, backgroundScope)
 
         Assertions.assertTrue(handlerCalled)
     }
@@ -220,7 +220,7 @@ class PomeriumAuthProviderTest {
 
         }
         val authService = PomeriumAuthProvider(InMemoryCredStore(), handler, server.port)
-        val job = authService.getAuth(route)
+        val job = authService.getAuth(route, backgroundScope)
 
         Assertions.assertTrue(job.isCancelled)
     }

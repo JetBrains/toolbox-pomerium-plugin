@@ -77,7 +77,7 @@ class PomeriumAuthProvider(
     }
     // todo: proper job cancellation
 
-    override suspend fun getAuth(route: URI): Deferred<String> =
+    override suspend fun getAuth(route: URI, scope: CoroutineScope): Deferred<String> =
         withContext(Dispatchers.Default) {
             LOG.info("Getting pomerium auth token for $route")
             //Check for existing job. Note, this is not guaranteed to be thread safe, but it does not require a network call.
@@ -128,7 +128,7 @@ class PomeriumAuthProvider(
                     }
                     routeToCredKeyMap[route] = credString
                     val isNewRoute = existingRoutes.add(route)
-                    val getToken = GlobalScope.async(Dispatchers.Default) {
+                    val getToken = scope.async(Dispatchers.Default) {
                         try {
                             val auth = callbackServer.getToken()
                             LOG.info("Successfully acquired Pomerium authentication")

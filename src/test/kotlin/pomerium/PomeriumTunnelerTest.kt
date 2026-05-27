@@ -32,14 +32,14 @@ class PomeriumTunnelerTest {
     @Test
     fun `test end to end tunneler`() = runTest {
         val authProvider = mock<AuthProvider> {
-            onBlocking { getAuth(any()) } doReturn CompletableDeferred(mockPomerium.token)
+            onBlocking { getAuth(any(), any()) } doReturn CompletableDeferred(mockPomerium.token)
         }
         val pomeriumTunneler = PomeriumTunneler(authProvider, null,  100, null)
         pomeriumTunneler.use {
             val mockPomeriumPort = mockPomerium.startMockPomerium()
 
             val uri = URI("tcp://${mockPomerium.route}")
-            val port = pomeriumTunneler.startTunnel(uri, pomeriumPort = mockPomeriumPort, useTls = !uri.scheme.equals("tcp", ignoreCase = true))
+            val port = pomeriumTunneler.startTunnel(uri, authScope = backgroundScope, pomeriumPort = mockPomeriumPort, useTls = !uri.scheme.equals("tcp", ignoreCase = true))
             Socket("localhost", port).use {
                 val testEchoMessage = Random.nextBytes(1024)
                 it.getOutputStream().write(testEchoMessage)
@@ -54,13 +54,13 @@ class PomeriumTunnelerTest {
     @Test
     fun `test tunneler with reconnect`() = runTest {
         val authProvider = mock<AuthProvider> {
-            onBlocking { getAuth(any()) } doReturn CompletableDeferred(mockPomerium.token)
+            onBlocking { getAuth(any(), any()) } doReturn CompletableDeferred(mockPomerium.token)
         }
         val pomeriumTunneler = PomeriumTunneler(authProvider, null, 100, null)
         val mockPomeriumPort = mockPomerium.startMockPomerium()
 
         val uri = URI("tcp://${mockPomerium.route}")
-        val port = pomeriumTunneler.startTunnel(uri, pomeriumPort = mockPomeriumPort, useTls = !uri.scheme.equals("tcp", ignoreCase = true))
+        val port = pomeriumTunneler.startTunnel(uri, authScope = backgroundScope, pomeriumPort = mockPomeriumPort, useTls = !uri.scheme.equals("tcp", ignoreCase = true))
         Socket("localhost", port).use {
             val testEchoMessage = Random.nextBytes(1024)
             it.getOutputStream().write(testEchoMessage)
@@ -80,13 +80,13 @@ class PomeriumTunnelerTest {
     @Test
     fun `test tunneler with pomerium disconnect`() = runTest {
         val authProvider = mock<AuthProvider> {
-            onBlocking { getAuth(any()) } doReturn CompletableDeferred(mockPomerium.token)
+            onBlocking { getAuth(any(), any()) } doReturn CompletableDeferred(mockPomerium.token)
         }
         val pomeriumTunneler = PomeriumTunneler(authProvider, null, 500, null)
         val mockPomeriumPort = mockPomerium.startMockPomerium()
 
         val uri = URI("tcp://${mockPomerium.route}")
-        val port = pomeriumTunneler.startTunnel(uri, pomeriumPort = mockPomeriumPort, useTls = !uri.scheme.equals("tcp", ignoreCase = true))
+        val port = pomeriumTunneler.startTunnel(uri, authScope = backgroundScope, pomeriumPort = mockPomeriumPort, useTls = !uri.scheme.equals("tcp", ignoreCase = true))
         try {
             Socket("localhost", port).use {
                 it.soTimeout = 500
@@ -129,7 +129,7 @@ class PomeriumTunnelerTest {
             return@async mockPomerium.token
         }
         val authProvider = mock<AuthProvider> {
-            onBlocking { getAuth(any()) } doReturn CompletableDeferred("") doSuspendableAnswer {
+            onBlocking { getAuth(any(), any()) } doReturn CompletableDeferred("") doSuspendableAnswer {
                 ++authCount
                 job
             }
@@ -138,7 +138,7 @@ class PomeriumTunnelerTest {
         val mockPomeriumPort = mockPomerium.startMockPomerium()
 
         val uri = URI("tcp://${mockPomerium.route}")
-        val port = pomeriumTunneler.startTunnel(uri, pomeriumPort = mockPomeriumPort, useTls = !uri.scheme.equals("tcp", ignoreCase = true))
+        val port = pomeriumTunneler.startTunnel(uri, authScope = backgroundScope, pomeriumPort = mockPomeriumPort, useTls = !uri.scheme.equals("tcp", ignoreCase = true))
         try {
             Socket("localhost", port).use {
                 it.soTimeout = 100
@@ -173,7 +173,7 @@ class PomeriumTunnelerTest {
         var authCount = 0
 
         val authProvider = mock<AuthProvider> {
-            onBlocking { getAuth(any()) } doReturn CompletableDeferred("") doSuspendableAnswer {
+            onBlocking { getAuth(any(), any()) } doReturn CompletableDeferred("") doSuspendableAnswer {
                 async {
                     delay(200)
                     return@async ""
@@ -184,7 +184,7 @@ class PomeriumTunnelerTest {
         val mockPomeriumPort = mockPomerium.startMockPomerium()
 
         val uri = URI("tcp://${mockPomerium.route}")
-        val port = pomeriumTunneler.startTunnel(uri, pomeriumPort = mockPomeriumPort, useTls = !uri.scheme.equals("tcp", ignoreCase = true))
+        val port = pomeriumTunneler.startTunnel(uri, authScope = backgroundScope, pomeriumPort = mockPomeriumPort, useTls = !uri.scheme.equals("tcp", ignoreCase = true))
         try {
             Socket("localhost", port).use {
                 it.soTimeout = 200
@@ -204,13 +204,13 @@ class PomeriumTunnelerTest {
     @Test
     fun `test tunneler with lifetime termination`() = runTest {
         val authProvider = mock<AuthProvider> {
-            onBlocking { getAuth(any()) } doReturn CompletableDeferred(mockPomerium.token)
+            onBlocking { getAuth(any(), any()) } doReturn CompletableDeferred(mockPomerium.token)
         }
         val pomeriumTunneler = PomeriumTunneler(authProvider, null,  100, null)
         val mockPomeriumPort = mockPomerium.startMockPomerium()
 
         val uri = URI("tcp://${mockPomerium.route}")
-        val port = pomeriumTunneler.startTunnel(uri, pomeriumPort = mockPomeriumPort, useTls = !uri.scheme.equals("tcp", ignoreCase = true))
+        val port = pomeriumTunneler.startTunnel(uri, authScope = backgroundScope, pomeriumPort = mockPomeriumPort, useTls = !uri.scheme.equals("tcp", ignoreCase = true))
         Socket("localhost", port).use {
             val testEchoMessage = Random.nextBytes(1024)
             it.getOutputStream().write(testEchoMessage)

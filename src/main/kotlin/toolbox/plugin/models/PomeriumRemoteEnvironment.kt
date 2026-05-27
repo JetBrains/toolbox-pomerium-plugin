@@ -4,6 +4,7 @@ import com.jetbrains.toolbox.api.core.diagnostics.Logger
 import com.jetbrains.toolbox.api.localization.LocalizableStringFactory
 import com.jetbrains.toolbox.api.remoteDev.*
 import com.jetbrains.toolbox.api.remoteDev.TabDefinition.Companion.toolsTab
+import com.jetbrains.toolbox.api.remoteDev.environments.CachedProject
 import com.jetbrains.toolbox.api.remoteDev.environments.EnvironmentContentsView
 import com.jetbrains.toolbox.api.remoteDev.states.CustomRemoteEnvironmentStateV2
 import com.jetbrains.toolbox.api.remoteDev.states.EnvironmentDescription
@@ -12,8 +13,13 @@ import com.jetbrains.toolbox.api.remoteDev.states.EnvironmentStateIcons
 import com.jetbrains.toolbox.api.remoteDev.states.RemoteEnvironmentState
 import com.jetbrains.toolbox.api.remoteDev.states.StandardRemoteEnvironmentState
 import com.jetbrains.toolbox.api.ui.actions.ActionDescription
+import toolbox.auth.PomeriumTunnelState
 import toolbox.auth.PomeriumTunneler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -27,12 +33,28 @@ sealed interface EnvironmentState {
     data object Disconnected : EnvironmentState
     data object Connecting : EnvironmentState
     data object Connected : EnvironmentState
+    data object WaitingForAuthorization : EnvironmentState
+    data object RefreshingAuthorization : EnvironmentState
+    data object UpstreamNotReady : EnvironmentState
+    data object Reconnecting : EnvironmentState
     data object AgentUnavailable : EnvironmentState
     data object AgentConnectionError : EnvironmentState
     data object AgentAuthorizationError : EnvironmentState
     data object PomeriumUnavailable : EnvironmentState
     data object PomeriumAuthorizationError : EnvironmentState
     data object PomeriumTunnelCreationError : EnvironmentState
+}
+
+fun PomeriumTunnelState.toEnvironmentState(): EnvironmentState = when (this) {
+    PomeriumTunnelState.WaitingForAuthorization -> EnvironmentState.WaitingForAuthorization
+    PomeriumTunnelState.Connecting -> EnvironmentState.Connecting
+    PomeriumTunnelState.Connected -> EnvironmentState.Connected
+    PomeriumTunnelState.RefreshingAuthorization -> EnvironmentState.RefreshingAuthorization
+    PomeriumTunnelState.Reconnecting -> EnvironmentState.Reconnecting
+    PomeriumTunnelState.UpstreamNotReady -> EnvironmentState.UpstreamNotReady
+    PomeriumTunnelState.PomeriumUnavailable -> EnvironmentState.PomeriumUnavailable
+    PomeriumTunnelState.PomeriumAuthorizationError -> EnvironmentState.PomeriumAuthorizationError
+    PomeriumTunnelState.PomeriumTunnelCreationError -> EnvironmentState.PomeriumTunnelCreationError
 }
 
 class PomeriumEnvironment(
@@ -46,8 +68,15 @@ class PomeriumEnvironment(
     private val logger: Logger,
     i18n: LocalizableStringFactory,
     colorPalette: EnvironmentStateColorPalette,
-    pluginScope: CoroutineScope
+    pluginScope: CoroutineScope,
 ) : RemoteProviderEnvironment(displayName), Closeable {
+
+    // Owns per-environment lifetime. Cancelling this cancels every in-flight auth job
+    // and any other coroutine launched from this environment (handles, contents view).
+    // Child of pluginScope so plugin shutdown also tears this down.
+    private val environmentScope: CoroutineScope = CoroutineScope(
+        SupervisorJob(pluginScope.coroutineContext[Job]) + Dispatchers.Default
+    )
 
     init {
         logger.info("Initializing pomerium environment")
@@ -63,7 +92,7 @@ class PomeriumEnvironment(
     override val nameFlow: MutableStateFlow<String>
         get() = MutableStateFlow(displayName)
     private val contentsView = PomeriumEnvironmentContentsView(
-        pluginScope,
+        environmentScope,
         logger,
         this,
         tunneler,
@@ -92,6 +121,9 @@ class PomeriumEnvironment(
     }
 
     suspend fun disconnect() {
+        // Cancel any in-flight auth / tunnel jobs that were launched into the environment scope.
+        // children() avoids cancelling environmentScope itself, so reconnect from the same env still works.
+        environmentScope.coroutineContext[Job]?.children?.forEach { it.cancel() }
         setEnvironmentState(EnvironmentState.Disconnected)
         connectionRequest.emit(false)
     }
@@ -116,6 +148,30 @@ class PomeriumEnvironment(
                 EnvironmentState.Disconnected -> StandardRemoteEnvironmentState.Inactive
                 EnvironmentState.Connecting -> StandardRemoteEnvironmentState.Initializing
                 EnvironmentState.Connected -> StandardRemoteEnvironmentState.Active
+                EnvironmentState.WaitingForAuthorization -> CustomRemoteEnvironmentStateV2(
+                    i18n.ptrl("Waiting for authorization"),
+                    colorPalette.getColor(StandardRemoteEnvironmentState.Initializing),
+                    true,
+                    EnvironmentStateIcons.Connecting,
+                )
+                EnvironmentState.RefreshingAuthorization -> CustomRemoteEnvironmentStateV2(
+                    i18n.ptrl("Refreshing authorization"),
+                    colorPalette.getColor(StandardRemoteEnvironmentState.Initializing),
+                    true,
+                    EnvironmentStateIcons.Connecting,
+                )
+                EnvironmentState.UpstreamNotReady -> CustomRemoteEnvironmentStateV2(
+                    i18n.ptrl("Waiting for upstream"),
+                    colorPalette.getColor(StandardRemoteEnvironmentState.Initializing),
+                    true,
+                    EnvironmentStateIcons.Connecting,
+                )
+                EnvironmentState.Reconnecting -> CustomRemoteEnvironmentStateV2(
+                    i18n.ptrl("Reconnecting"),
+                    colorPalette.getColor(StandardRemoteEnvironmentState.Initializing),
+                    false,
+                    EnvironmentStateIcons.Connecting,
+                )
                 EnvironmentState.AgentUnavailable -> CustomRemoteEnvironmentStateV2(
                     i18n.ptrl("Toolbox Agent is unavailable"),
                     colorPalette.getColor(StandardRemoteEnvironmentState.Unreachable),
@@ -162,6 +218,10 @@ class PomeriumEnvironment(
     }
 
     override fun close() {
-        //environmentScope.cancel()
+        environmentScope.cancel()
+    }
+
+    fun getProjects(): List<CachedProject> {
+        TODO("Not yet implemented")
     }
 }
