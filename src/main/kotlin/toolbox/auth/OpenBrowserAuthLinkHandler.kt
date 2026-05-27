@@ -5,6 +5,9 @@ import java.net.URI
 
 class OpenBrowserAuthLinkHandler : AuthLinkHandler {
     override fun handleAuthLink(getLink: () -> URI, newRoute: Boolean) {
-        Desktop.getDesktop().browse(getLink())
+        if (Desktop.isDesktopSupported() &&
+                Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+            Desktop.getDesktop().browse(getLink())
+        }
     }
 }
