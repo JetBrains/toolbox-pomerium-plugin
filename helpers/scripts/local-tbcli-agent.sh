@@ -10,6 +10,17 @@ fi
 
 HELPERS_DIR="${HELPERS_DIR:-$DEFAULT_HELPERS_DIR}"
 STATE_DIR="${STATE_DIR:-$HELPERS_DIR/state}"
+DEV_LOCAL_ENV_FILE="${DEV_LOCAL_ENV_FILE:-$STATE_DIR/dev.local.env}"
+TOOLBOX_DEV_ENV_FILE="${TOOLBOX_DEV_ENV_FILE:-$STATE_DIR/toolbox-dev.local.env}"
+if [[ -f "$DEV_LOCAL_ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$DEV_LOCAL_ENV_FILE"
+fi
+if [[ -f "$TOOLBOX_DEV_ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$TOOLBOX_DEV_ENV_FILE"
+fi
+
 DEFAULTS_FILE="${LINK_HELPER_DEFAULTS_FILE:-$STATE_DIR/link-helper.defaults.real.env}"
 LOCAL_TBCLI_CACHE_DIR="${LOCAL_TBCLI_CACHE_DIR:-$STATE_DIR/.cache}"
 TBCLI_VERSION="${TBCLI_VERSION:-3.6.0.84134}"
@@ -151,7 +162,7 @@ run_agent() {
   local cmd=("$LOCAL_TBCLI_PATH" "agent")
 
   if [[ -n "$listen_port" ]]; then
-    cmd+=( "--expose-port=$listen_port")
+    cmd+=( "--address" "$listen_address" "--port" "$listen_port" )
   fi
 
   log "Running: ${cmd[*]}"

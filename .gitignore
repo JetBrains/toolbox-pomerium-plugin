@@ -32,7 +32,9 @@ helpers/state/manage.local.env
 helpers/state/dev.local.env
 helpers/state/toolbox-dev.local.env
 helpers/state/local-idea.local.env
-helpers/state/idea.tbe.vmoptions.local
+helpers/state/*.vmoptions*
+helpers/state/toolbox-installed-vmoptions/
+helpers/state/toolbox-installed-vmoptions.local/
 helpers/state/.cache/
 helpers/state/docker-build/
 helpers/pomerium/real/config.yaml

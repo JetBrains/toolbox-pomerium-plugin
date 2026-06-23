@@ -1,6 +1,6 @@
-FROM eclipse-temurin:21-jre-jammy
+FROM eclipse-temurin:25-jre-jammy
 
-ARG TBCLI_VERSION=3.5.0.73530
+ARG TBCLI_VERSION=3.5.0.84344
 ARG USERNAME=dev
 ARG USER_UID=1000
 ARG USER_GID=1000
@@ -11,7 +11,7 @@ ENV USERNAME=${USERNAME}
 ENV USER_UID=${USER_UID}
 ENV USER_GID=${USER_GID}
 ENV TOOLBOX_HOME=/home/${USERNAME}
-ENV TOOLBOX_DATA_DIR=/home/${USERNAME}/.local/share/JetBrains/Toolbox
+ENV TOOLBOX_DATA_DIR=/home/${USERNAME}/.local/share/JetBrains/Toolbox-Dev
 ENV TOOLBOX_CACHE_DIR=/home/${USERNAME}/.cache/JetBrains/Toolbox-CLI-dist
 ENV IDEA_DIST_ROOT=/opt/idea-dist
 
@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iproute2 \
     python3 \
     tar \
+    unzip \
     procps \
   && rm -rf /var/lib/apt/lists/*
 
@@ -36,14 +37,9 @@ COPY docker/entrypoint.sh /opt/helpers/docker/entrypoint.sh
 COPY docker/bridge.py /opt/helpers/docker/bridge.py
 COPY docker/agent-stack.sh /opt/helpers/docker/agent-stack.sh
 COPY docker/watch_port.py /opt/helpers/docker/watch_port.py
-COPY state/docker-build/idea-dist /opt/helpers/state/docker-build/idea-dist
 
 RUN chmod +x /opt/helpers/docker/entrypoint.sh /opt/helpers/docker/bridge.py /opt/helpers/docker/agent-stack.sh /opt/helpers/docker/watch_port.py \
   && mkdir -p "${IDEA_DIST_ROOT}" \
-  && archive="$(find /opt/helpers/state/docker-build/idea-dist -maxdepth 1 -type f -name '*.tar.gz' | head -n 1)" \
-  && test -n "$archive" \
-  && tar -xzf "$archive" -C "${IDEA_DIST_ROOT}" \
-  && rm -rf /opt/helpers/state/docker-build/idea-dist \
   && ssh-keygen -A \
   && printf '%s\n' \
     'Port 22' \

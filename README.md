@@ -9,6 +9,13 @@ Use:
 ./gradlew installPlugin
 ```
 
+For a local dev Toolbox build, set the dev Toolbox path in your local Gradle
+properties or environment, then use:
+
+```bash
+./gradlew installPluginForToolboxDev
+```
+
 `installPlugin` builds and installs:
 - fat plugin jar from `shadowJar`
 - generated `extension.json`
@@ -19,6 +26,9 @@ Target plugin directory is resolved by OS and plugin id (`jetbrains.toolbox.pome
 - Windows: `%LOCALAPPDATA%/JetBrains/Toolbox/cache/plugins/jetbrains.toolbox.pomerium`
 - macOS: `~/Library/Caches/JetBrains/Toolbox/plugins/jetbrains.toolbox.pomerium`
 - Linux: `${XDG_DATA_HOME:-~/.local/share}/JetBrains/Toolbox/plugins/jetbrains.toolbox.pomerium`
+
+`installPluginForToolboxDev` resolves the bundle identifier of that app and installs into the matching dev cache directory:
+- macOS dev Toolbox: `~/Library/Caches/JetBrains/Toolbox-Dev/plugins/jetbrains.toolbox.pomerium`
 
 ### Build distributable zip
 Use:
@@ -40,8 +50,8 @@ jetbrains://remote-dev/jetbrains.toolbox.pomerium/new-environment#<params>
 Parameters can be passed in fragment (`#...`) or query (`?...`), fragment is preferred.
 
 Required top-level params:
-- `clientPomeriumRoute` (example: `tcp://backend.localhost:443`, URL-encoded in link; this is the backend route through Pomerium)
-- `connectionKey` (raw Toolbox backend endpoint + fragment metadata, for example `tcp://0.0.0.0:5990#...`)
+- `clientPomeriumRoute` (example: `https://backend.localhost:443`, URL-encoded in link; this is the backend route through Pomerium)
+- `connectionKey` (raw Toolbox backend endpoint + fragment metadata, for example `https://backend.localhost:5990#...`)
 - `agentConnectionUrl` (HTTPS URL for agent connection through Pomerium)
 - `agentAuth` (agent auth token)
 
@@ -60,7 +70,7 @@ jetbrains://remote-dev/jetbrains.toolbox.pomerium/new-environment#clientPomerium
 `connectionKey` format:
 
 ```text
-tcp://<host>:<port>#jt=<id>&p=<productCode>&fp=<fingerprint>&cb=<build>&newUi=<bool>&jb=<jbr>&remoteId=<id>
+https://<host>:<port>#jt=<id>&p=<productCode>&fp=<fingerprint>&cb=<build>&newUi=<bool>&jb=<jbr>&remoteId=<id>
 ```
 
 The plugin parses metadata from `connectionKey` fragment and uses it to initiate IDE attach flow.

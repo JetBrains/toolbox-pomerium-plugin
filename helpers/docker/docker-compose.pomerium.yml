@@ -5,11 +5,28 @@ services:
       dockerfile: docker/Dockerfile
     image: helpers-upstream:latest
     environment:
-      USE_HOST_TBCLI: "${USE_HOST_TBCLI:-1}"
+      TBCLI_VERSION: "${TBCLI_VERSION:-3.5.0.84344}"
+      USE_HOST_TBCLI: "${USE_HOST_TBCLI:-0}"
       HOST_TBCLI_DIR: /opt/helpers/host-tbcli
+      HOST_IDEA_DIST_ROOT: /opt/helpers/host-idea-dist
+      HOST_IDEA_DIST_MODE: "${HOST_IDEA_DIST_MODE:-}"
+      HOST_IDEA_DIST_SOURCE_NAME: "${HOST_IDEA_DIST_SOURCE_NAME:-}"
+      HOST_IDEA_DIST_BASE_DIR_NAME: "${HOST_IDEA_DIST_BASE_DIR_NAME:-}"
+      HOST_PROJECT_ROOT: /opt/helpers/host-project
+      HOST_PROJECT_SOURCE_NAME: "${HOST_PROJECT_SOURCE_NAME:-}"
+      CONTAINER_PROJECT_DIR: "${CONTAINER_PROJECT_DIR:-/home/dev/projects/test_project}"
+      TOOLBOX_MODE: "${TOOLBOX_MODE-toolbox}"
+      TOOLBOX_DATA_DIR: "${TOOLBOX_DATA_DIR-/home/dev/.local/share/JetBrains/Toolbox}"
+      TOOLBOX_COMPAT_DATA_DIR: "${TOOLBOX_COMPAT_DATA_DIR-/home/dev/.local/share/JetBrains/Toolbox-Dev}"
+      SKIP_TOOLBOX_ENTERPRISE_CONFIG: "${SKIP_TOOLBOX_ENTERPRISE_CONFIG-1}"
+      AGENT_TCP_LISTEN_ON_PORT: "${AGENT_TCP_LISTEN_ON_PORT-}"
+      AGENT_FORWARD_PORT: "${AGENT_FORWARD_PORT-44000}"
+      BACKEND_FORWARD_PORT: "${BACKEND_FORWARD_PORT-5990}"
     volumes:
       - ../state/link-helper.defaults.real.env:/opt/helpers/state/link-helper.defaults.real.env:ro
+      - "${HOST_IDEA_DIST_MOUNT_ROOT:-/tmp}:/opt/helpers/host-idea-dist:ro"
       - "${HOST_TBCLI_ROOT:-/tmp}:/opt/helpers/host-tbcli:ro"
+      - "${HOST_PROJECT_MOUNT_ROOT:-/tmp}:/opt/helpers/host-project:ro"
     ports:
       - "2223:22"
       - "5990:5990"

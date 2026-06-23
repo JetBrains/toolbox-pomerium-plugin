@@ -20,7 +20,7 @@ There are two supported operational paths:
 - `write-link-defaults.sh`
   - reads live agent data from the running container
   - updates `link-helper.defaults.real.env`
-  - keeps runtime defaults such as fixed agent port, agent forwarder port, and backend relay port
+- keeps runtime defaults such as fixed agent port and agent forwarder port
 
 - `link-helper.sh`
   - reads `link-helper.defaults.real.env`
@@ -37,7 +37,7 @@ There are two supported operational paths:
   - reads runtime settings from the mounted defaults file
   - optionally fixes the agent TCP port
   - optionally starts the agent forwarder
-  - optionally starts the backend relay
+- expects the IDE backend to listen directly on `helpers-upstream:5990`
 
 - `install-tbcli-remote.sh`
   - connects to a real machine over SSH
@@ -156,7 +156,6 @@ The helper asks for:
 - `agentAuth`
 - `agentTcpListenOnPort`
 - `agentForwardPort`
-- `backendRelayPort`
 
 After the prompts it:
 
@@ -165,7 +164,7 @@ After the prompts it:
 
 ### 3. Apply the runtime settings
 
-If you changed `agentTcpListenOnPort`, `agentForwardPort`, or `backendRelayPort`, recreate the stack:
+If you changed `agentTcpListenOnPort` or `agentForwardPort`, recreate the stack:
 
 ```bash
 ./manage.sh recreate
@@ -230,12 +229,12 @@ The generated deep link intentionally mixes two kinds of backend addressing:
 
 - `clientPomeriumRoute`
   - top-level Pomerium route for the IDE/backend flow
-  - default: `tcp://backend.localhost:443`
+  - default: `https://backend.localhost:443`
   - this is the external hostname that the plugin should use when it asks Pomerium to open the backend tunnel
 
 - `connectionKey`
   - raw Toolbox backend connection metadata
-  - default host/port prefix: `tcp://0.0.0.0:5990#...`
+  - default host/port prefix: `https://backend.localhost:5990#...`
   - the fragment after `#` carries the IDE attach metadata (`jt`, `p`, `fp`, `cb`, and related fields)
 
 - `displayName`
@@ -271,10 +270,14 @@ The runtime settings live in:
 
 - [link-helper.defaults.real.env](state/link-helper.defaults.real.env)
 
-Machine-specific host paths for `manage.sh` live in:
+Machine-specific settings for `manage.sh` live in:
 
-- `helpers/state/manage.local.env`
+- common helper switches: `helpers/state/manage.local.env`
+- dev Toolbox settings: `helpers/state/toolbox-dev.local.env`
+- local IDEA paths and overlays: `helpers/state/local-idea.local.env`
 - start from [manage.local.env.example](state/manage.local.env.example)
+- start from [toolbox-dev.local.env.example](state/toolbox-dev.local.env.example)
+- start from [local-idea.local.env.example](state/local-idea.local.env.example)
 
 ### `AGENT_TCP_LISTEN_ON_PORT`
 
@@ -311,22 +314,6 @@ Then:
   - `0.0.0.0:44000 -> 127.0.0.1:<tbcli agent port>`
 - if the agent already listens directly on `44000`, the relay is skipped
 
-### `BACKEND_FORWARD_PORT`
-
-- empty value:
-  - backend relay is disabled
-
-- fixed value, for example:
-
-```bash
-BACKEND_FORWARD_PORT='5990'
-```
-
-Then:
-
-- `agent-stack.sh` starts a relay:
-  - `container_ip:5990 -> 127.0.0.1:5990`
-
 ## Recommended Values
 
 ### Agent-only testing
@@ -335,7 +322,6 @@ Use:
 
 ```bash
 AGENT_TCP_LISTEN_ON_PORT='44000'
-BACKEND_FORWARD_PORT=''
 ```
 
 This is the simplest stable setup if you only need the agent connection.
@@ -346,10 +332,9 @@ Use:
 
 ```bash
 AGENT_TCP_LISTEN_ON_PORT='44000'
-BACKEND_FORWARD_PORT='5990'
 ```
 
-Use this only if you really need the backend listener path too.
+Use this only if you really need the backend listener path too, and make sure the IDE itself listens directly on `helpers-upstream:5990`.
 
 ## Link Model
 

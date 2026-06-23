@@ -4,10 +4,37 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 MANAGE_LOCAL_ENV_FILE="${MANAGE_LOCAL_ENV_FILE:-$SCRIPT_DIR/../state/manage.local.env}"
+DEV_LOCAL_ENV_FILE="${DEV_LOCAL_ENV_FILE:-$SCRIPT_DIR/../state/dev.local.env}"
+TOOLBOX_DEV_ENV_FILE="${TOOLBOX_DEV_ENV_FILE:-$SCRIPT_DIR/../state/toolbox-dev.local.env}"
+LOCAL_IDEA_ENV_FILE="${LOCAL_IDEA_ENV_FILE:-$SCRIPT_DIR/../state/local-idea.local.env}"
+LINK_HELPER_DEFAULTS_FILE="${LINK_HELPER_DEFAULTS_FILE:-$SCRIPT_DIR/../state/link-helper.defaults.real.env}"
+AGENT_INFO_WAIT_ATTEMPTS="${AGENT_INFO_WAIT_ATTEMPTS:-300}"
 
 if [[ -f "$MANAGE_LOCAL_ENV_FILE" ]]; then
   # shellcheck disable=SC1090
   source "$MANAGE_LOCAL_ENV_FILE"
+fi
+if [[ -f "$DEV_LOCAL_ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$DEV_LOCAL_ENV_FILE"
+fi
+if [[ -f "$TOOLBOX_DEV_ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$TOOLBOX_DEV_ENV_FILE"
+fi
+if [[ -f "$LOCAL_IDEA_ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$LOCAL_IDEA_ENV_FILE"
+fi
+
+USE_HOST_TBCLI_CONFIGURED=0
+if [[ "${USE_HOST_TBCLI+x}" == "x" ]]; then
+  USE_HOST_TBCLI_CONFIGURED=1
+fi
+
+TBCLI_SOURCE_MODE_CONFIGURED=0
+if [[ "${TBCLI_SOURCE_MODE+x}" == "x" ]]; then
+  TBCLI_SOURCE_MODE_CONFIGURED=1
 fi
 
 PASSWORD="${PASSWORD:-dev}"
@@ -15,22 +42,41 @@ POMERIUM_COMPOSE_FILE="${POMERIUM_COMPOSE_FILE:-$SCRIPT_DIR/../docker/docker-com
 COMPOSE_SERVICE="${COMPOSE_SERVICE:-helpers-upstream}"
 HOST_FRONTEND_LOGS_DIR="${HOST_FRONTEND_LOGS_DIR:-$HOME/Library/Logs/JetBrains/IntelliJIdea2025.3/frontend}"
 HOST_TOOLBOX_LOGS_DIR="${HOST_TOOLBOX_LOGS_DIR:-$HOME/Library/Logs/JetBrains/Toolbox}"
-DEFAULT_HOST_TBCLI_SEARCH_ROOT="$HOME/Library/Caches/JetBrains/MonorepoBazel"
 HOST_TBCLI_SOURCE_PATH="${HOST_TBCLI_SOURCE_PATH:-}"
-HOST_TBCLI_SEARCH_ROOT="${HOST_TBCLI_SEARCH_ROOT:-$DEFAULT_HOST_TBCLI_SEARCH_ROOT}"
-USE_HOST_TBCLI="${USE_HOST_TBCLI:-1}"
+HOST_TBCLI_SEARCH_ROOT="${HOST_TBCLI_SEARCH_ROOT:-}"
+HOST_TBCLI_PLATFORM="${HOST_TBCLI_PLATFORM:-}"
+TBCLI_VERSION="${TBCLI_VERSION:-3.5.0.84344}"
+TBCLI_SOURCE_MODE="${TBCLI_SOURCE_MODE:-auto}"
+USE_HOST_TBCLI="${USE_HOST_TBCLI:-}"
+TBCLI_SOURCE_MODE_EXPLICIT=0
 HOST_TBCLI_FALLBACK_ROOT="${HOST_TBCLI_FALLBACK_ROOT:-$SCRIPT_DIR/../state}"
 HOST_TBCLI_ROOT=""
+TOOLBOX_MODE="${TOOLBOX_MODE:-toolbox}"
+TOOLBOX_MODE_FROM_STATE=0
+TOOLBOX_MODE_EXPLICIT=0
+TOOLBOX_DATA_DIR_CONTAINER="${TOOLBOX_DATA_DIR_CONTAINER:-/home/dev/.local/share/JetBrains/Toolbox}"
+TOOLBOX_COMPAT_DATA_DIR_CONTAINER="${TOOLBOX_COMPAT_DATA_DIR_CONTAINER:-/home/dev/.local/share/JetBrains/Toolbox-Dev}"
+AGENT_TCP_LISTEN_ON_PORT_VALUE="${AGENT_TCP_LISTEN_ON_PORT_VALUE:-}"
+AGENT_FORWARD_PORT_VALUE="${AGENT_FORWARD_PORT_VALUE:-44000}"
+BACKEND_FORWARD_PORT_VALUE="${BACKEND_FORWARD_PORT_VALUE:-5990}"
+SKIP_TOOLBOX_ENTERPRISE_CONFIG_VALUE="${SKIP_TOOLBOX_ENTERPRISE_CONFIG_VALUE:-1}"
 DEFAULT_HOST_IDEA_ARTIFACTS_DIR=""
+HOST_IDEA_DIST_DIR="${HOST_IDEA_DIST_DIR:-}"
 HOST_IDEA_ARTIFACTS_DIR="${HOST_IDEA_ARTIFACTS_DIR:-$DEFAULT_HOST_IDEA_ARTIFACTS_DIR}"
 HOST_IDEA_DIST_ARCHIVE="${HOST_IDEA_DIST_ARCHIVE:-}"
-IDEA_DIST_STAGING_DIR="${IDEA_DIST_STAGING_DIR:-$SCRIPT_DIR/../state/docker-build/idea-dist}"
+HOST_IDEA_DIST_MOUNT_ROOT="${HOST_IDEA_DIST_MOUNT_ROOT:-}"
+HOST_IDEA_DIST_MODE="${HOST_IDEA_DIST_MODE:-}"
+HOST_IDEA_DIST_SOURCE_NAME="${HOST_IDEA_DIST_SOURCE_NAME:-}"
+HOST_IDEA_DIST_BASE_DIR_NAME="${HOST_IDEA_DIST_BASE_DIR_NAME:-}"
+HOST_PROJECT_DIR="${HOST_PROJECT_DIR:-}"
+HOST_PROJECT_MOUNT_ROOT="${HOST_PROJECT_MOUNT_ROOT:-}"
+HOST_PROJECT_SOURCE_NAME="${HOST_PROJECT_SOURCE_NAME:-}"
+CONTAINER_PROJECT_DIR="${CONTAINER_PROJECT_DIR:-/home/dev/projects/test_project}"
 
 usage() {
   cat <<'EOF'
 Usage:
-  ./manage.sh [--use-host-tbcli] [--host-tbcli-path PATH] <command>
-  ./manage.sh --download-tbcli <command>
+  ./manage.sh [--toolbox|--toolbox-dev] [--use-host-tbcli|--download-tbcli] [--host-tbcli-path PATH] <command>
 
 Commands:
   recreate
@@ -43,7 +89,7 @@ Commands:
   print-host-client-link
   print-host-toolbox-tunnel-lines [--with-paths]
   find-join-link [--with-paths]
-  print-link
+  print-link [display-name]
   print-json
   check-current-link
   check-connect [agent|backend]
@@ -60,42 +106,249 @@ Commands:
   help
 
 Flags:
+  --toolbox
+  --toolbox-dev
   --use-host-tbcli
   --download-tbcli
   --host-tbcli-path PATH
 
 Defaults:
-  local env file: helpers/state/manage.local.env
-  host tbcli mode: enabled
-  host tbcli path: auto-discovered under ~/Library/Caches/JetBrains/MonorepoBazel
-  IDEA artifacts dir: configure in helpers/state/manage.local.env or HOST_IDEA_ARTIFACTS_DIR
+  common env file: helpers/state/manage.local.env
+  dev Toolbox env file: helpers/state/toolbox-dev.local.env
+  local IDEA env file: helpers/state/local-idea.local.env
+  toolbox mode: normal Toolbox with agent/backend forwarders
+  tbcli source mode: auto (Toolbox => downloaded Linux tbcli, Toolbox-Dev => host tbcli)
+  Linux tbcli version: 3.5.0.84344
+  host tbcli path: configure in helpers/state/toolbox-dev.local.env via HOST_TBCLI_SOURCE_PATH or HOST_TBCLI_SEARCH_ROOT
+  IDE dist: configure in helpers/state/local-idea.local.env via HOST_IDEA_DIST_DIR, HOST_IDEA_ARTIFACTS_DIR, or HOST_IDEA_DIST_ARCHIVE
+  Project copy: optional in helpers/state/local-idea.local.env via HOST_PROJECT_DIR -> CONTAINER_PROJECT_DIR
 EOF
 }
 
-discover_host_tbcli_source_path() {
-  python3 - <<'PY' "$HOST_TBCLI_SEARCH_ROOT"
+select_toolbox_mode() {
+  case "$1" in
+    toolbox)
+      TOOLBOX_MODE="toolbox"
+      TOOLBOX_DATA_DIR_CONTAINER="/home/dev/.local/share/JetBrains/Toolbox"
+      TOOLBOX_COMPAT_DATA_DIR_CONTAINER="/home/dev/.local/share/JetBrains/Toolbox-Dev"
+      AGENT_TCP_LISTEN_ON_PORT_VALUE=""
+      AGENT_FORWARD_PORT_VALUE="44000"
+      BACKEND_FORWARD_PORT_VALUE="5990"
+      SKIP_TOOLBOX_ENTERPRISE_CONFIG_VALUE="1"
+      ;;
+    toolbox-dev)
+      TOOLBOX_MODE="toolbox-dev"
+      TOOLBOX_DATA_DIR_CONTAINER="/home/dev/.local/share/JetBrains/Toolbox-Dev"
+      TOOLBOX_COMPAT_DATA_DIR_CONTAINER="/home/dev/.local/share/JetBrains/Toolbox"
+      AGENT_TCP_LISTEN_ON_PORT_VALUE="44000"
+      AGENT_FORWARD_PORT_VALUE=""
+      BACKEND_FORWARD_PORT_VALUE=""
+      SKIP_TOOLBOX_ENTERPRISE_CONFIG_VALUE="0"
+      ;;
+    *)
+      echo "[manage] unknown toolbox mode: $1" >&2
+      exit 1
+      ;;
+  esac
+}
+
+load_toolbox_mode_from_state() {
+  [[ -f "$LINK_HELPER_DEFAULTS_FILE" ]] || return 0
+
+  local state_mode=""
+  state_mode="$(python3 - <<'PY' "$LINK_HELPER_DEFAULTS_FILE"
 import pathlib
+import shlex
+import sys
+
+path = pathlib.Path(sys.argv[1])
+for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    line = raw_line.strip()
+    if not line or line.startswith("#") or "=" not in line:
+        continue
+    key, value = line.split("=", 1)
+    if key.strip() != "TOOLBOX_MODE":
+        continue
+    value = value.strip()
+    if not value:
+        print("")
+        raise SystemExit(0)
+    try:
+        parts = shlex.split(value, posix=True)
+        print(" ".join(parts))
+    except ValueError:
+        print(value.strip("\"'"))
+    raise SystemExit(0)
+print("")
+PY
+)"
+
+  case "$state_mode" in
+    toolbox|toolbox-dev)
+      select_toolbox_mode "$state_mode"
+      TOOLBOX_MODE_FROM_STATE=1
+      ;;
+  esac
+}
+
+agent_stack_exec() {
+  local command="$1"
+  shift || true
+  compose exec -T \
+    -e POMERIUM_STACK_MODE="real" \
+    -e TOOLBOX_MODE="$TOOLBOX_MODE" \
+    -e TOOLBOX_DATA_DIR="$TOOLBOX_DATA_DIR_CONTAINER" \
+    -e TOOLBOX_COMPAT_DATA_DIR="$TOOLBOX_COMPAT_DATA_DIR_CONTAINER" \
+    -e SKIP_TOOLBOX_ENTERPRISE_CONFIG="$SKIP_TOOLBOX_ENTERPRISE_CONFIG_VALUE" \
+    -e AGENT_TCP_LISTEN_ON_PORT="$AGENT_TCP_LISTEN_ON_PORT_VALUE" \
+    -e AGENT_FORWARD_PORT="$AGENT_FORWARD_PORT_VALUE" \
+    -e BACKEND_FORWARD_PORT="$BACKEND_FORWARD_PORT_VALUE" \
+    "$COMPOSE_SERVICE" bash -lc "$command" "$@"
+}
+
+sync_toolbox_mode_from_container() {
+  ensure_compose_file
+  [[ "$TOOLBOX_MODE_EXPLICIT" == "1" ]] && return 0
+
+  local inspect_output=""
+  inspect_output="$(docker inspect docker-helpers-upstream-1 --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null || true)"
+  [[ -n "$inspect_output" ]] || return 0
+
+  local detected_mode=""
+  detected_mode="$(printf '%s\n' "$inspect_output" | sed -n 's/^TOOLBOX_MODE=//p' | tail -n 1)"
+  case "$detected_mode" in
+    toolbox)
+      TOOLBOX_MODE="toolbox"
+      TOOLBOX_DATA_DIR_CONTAINER="/home/dev/.local/share/JetBrains/Toolbox"
+      TOOLBOX_COMPAT_DATA_DIR_CONTAINER="/home/dev/.local/share/JetBrains/Toolbox-Dev"
+      AGENT_TCP_LISTEN_ON_PORT_VALUE=""
+      AGENT_FORWARD_PORT_VALUE="44000"
+      BACKEND_FORWARD_PORT_VALUE="5990"
+      SKIP_TOOLBOX_ENTERPRISE_CONFIG_VALUE="1"
+      ;;
+    toolbox-dev)
+      TOOLBOX_MODE="toolbox-dev"
+      TOOLBOX_DATA_DIR_CONTAINER="/home/dev/.local/share/JetBrains/Toolbox-Dev"
+      TOOLBOX_COMPAT_DATA_DIR_CONTAINER="/home/dev/.local/share/JetBrains/Toolbox"
+      AGENT_TCP_LISTEN_ON_PORT_VALUE="44000"
+      AGENT_FORWARD_PORT_VALUE=""
+      BACKEND_FORWARD_PORT_VALUE=""
+      SKIP_TOOLBOX_ENTERPRISE_CONFIG_VALUE="0"
+      ;;
+  esac
+}
+
+load_toolbox_mode_from_state
+if [[ "$TOOLBOX_MODE_FROM_STATE" != "1" ]]; then
+  select_toolbox_mode "$TOOLBOX_MODE"
+fi
+
+resolve_tbcli_source_mode() {
+  local selected_mode="$TBCLI_SOURCE_MODE"
+
+  if [[ "$TBCLI_SOURCE_MODE_EXPLICIT" != "1" && "$TBCLI_SOURCE_MODE_CONFIGURED" != "1" && "$USE_HOST_TBCLI_CONFIGURED" == "1" ]]; then
+    case "${USE_HOST_TBCLI,,}" in
+      1|true|yes|on)
+        selected_mode="host"
+        ;;
+      0|false|no|off)
+        selected_mode="download"
+        ;;
+      *)
+        echo "[manage] unsupported USE_HOST_TBCLI value: $USE_HOST_TBCLI" >&2
+        exit 1
+        ;;
+    esac
+  fi
+
+  case "$selected_mode" in
+    auto)
+      if [[ "$TOOLBOX_MODE" == "toolbox" ]]; then
+        USE_HOST_TBCLI="0"
+      else
+        USE_HOST_TBCLI="1"
+      fi
+      ;;
+    host)
+      USE_HOST_TBCLI="1"
+      ;;
+    download)
+      USE_HOST_TBCLI="0"
+      ;;
+    *)
+      echo "[manage] unsupported TBCLI_SOURCE_MODE: $selected_mode" >&2
+      echo "[manage] expected one of: auto, host, download" >&2
+      exit 1
+      ;;
+  esac
+
+  TBCLI_SOURCE_MODE="$selected_mode"
+}
+
+discover_host_tbcli_source_path() {
+  local docker_platform_hint=""
+  if [[ -z "$HOST_TBCLI_PLATFORM" ]]; then
+    docker_platform_hint="$(docker version --format '{{.Server.Arch}}' 2>/dev/null || true)"
+    docker_platform_hint="$(printf '%s' "$docker_platform_hint" | tr '[:upper:]' '[:lower:]')"
+    case "$docker_platform_hint" in
+      arm64|aarch64)
+        docker_platform_hint="linux_aarch64_platform-fastbuild"
+        ;;
+      amd64|x86_64)
+        docker_platform_hint="linux_x86_64_platform-fastbuild"
+        ;;
+      *)
+        docker_platform_hint=""
+        ;;
+    esac
+  fi
+
+  python3 - <<'PY' "$HOST_TBCLI_SEARCH_ROOT" "$HOST_TBCLI_PLATFORM" "$docker_platform_hint"
+import pathlib
+import platform
 import sys
 
 root = pathlib.Path(sys.argv[1]).expanduser()
+platform_hint = sys.argv[2].strip() or sys.argv[3].strip()
 if not root.is_dir():
     raise SystemExit(1)
 
-pattern = "*/execroot/_main/bazel-out/*/bin/toolbox/cli/distribution/layout_cli_host_nojre/tbcli/bin"
-candidates = []
-for path in root.glob(pattern):
-    tbcli = path / "tbcli"
-    try:
-        if path.is_dir() and tbcli.is_file() and tbcli.stat().st_size > 0:
-            candidates.append((tbcli.stat().st_mtime, path))
-    except OSError:
-        pass
+machine = platform.machine().lower()
+if not platform_hint:
+    if machine in {"arm64", "aarch64"}:
+        platform_hint = "linux_aarch64_platform-fastbuild"
+    elif machine in {"x86_64", "amd64"}:
+        platform_hint = "linux_x86_64_platform-fastbuild"
 
-if not candidates:
-    raise SystemExit(1)
+patterns = []
+if platform_hint:
+    patterns.append(f"*/execroot/_main/bazel-out/{platform_hint}/bin/toolbox/cli/distribution/layout_cli_host_nojre/tbcli/bin")
 
-candidates.sort(reverse=True)
-print(candidates[0][1])
+patterns.extend([
+    "*/execroot/_main/bazel-out/linux_aarch64_platform-fastbuild/bin/toolbox/cli/distribution/layout_cli_host_nojre/tbcli/bin",
+    "*/execroot/_main/bazel-out/linux_x86_64_platform-fastbuild/bin/toolbox/cli/distribution/layout_cli_host_nojre/tbcli/bin",
+])
+
+for pattern in patterns:
+    seen = set()
+    candidates = []
+    for path in root.glob(pattern):
+        path_key = str(path.resolve())
+        if path_key in seen:
+            continue
+        seen.add(path_key)
+        tbcli = path / "tbcli"
+        try:
+            if path.is_dir() and tbcli.is_file() and tbcli.stat().st_size > 0:
+                candidates.append((tbcli.stat().st_mtime, path))
+        except OSError:
+            pass
+    if candidates:
+        candidates.sort(reverse=True)
+        print(candidates[0][1])
+        raise SystemExit(0)
+
+raise SystemExit(1)
 PY
 }
 
@@ -170,7 +423,11 @@ root = pathlib.Path(sys.argv[1]).expanduser()
 if not root.is_dir():
     raise SystemExit(1)
 
-candidates = sorted(root.glob("ideaIU-*-aarch64.tar.gz"), key=lambda p: p.stat().st_mtime, reverse=True)
+candidates = sorted(
+    list(root.glob("ideaIU-*-aarch64.tar.gz")) + list(root.glob("ideaIU-*-aarch64.sit")),
+    key=lambda p: p.stat().st_mtime,
+    reverse=True,
+)
 if not candidates:
     raise SystemExit(1)
 
@@ -178,50 +435,126 @@ print(candidates[0])
 PY
 }
 
-stage_idea_distribution() {
+prepare_idea_distribution_mount() {
+  if [[ -n "$HOST_IDEA_DIST_DIR" ]]; then
+    local dir_info=""
+    dir_info="$(python3 - <<'PY' "$HOST_IDEA_DIST_DIR"
+import pathlib
+import sys
+
+source_dir = pathlib.Path(sys.argv[1]).expanduser().resolve()
+base_dir = (source_dir.parent / "dist.all").resolve()
+
+if not source_dir.is_dir():
+    raise SystemExit(f"HOST_IDEA_DIST_DIR does not exist: {source_dir}")
+
+mount_root = source_dir.parent
+base_name = ""
+try:
+    if base_dir.is_dir() and base_dir != source_dir and base_dir.parent == mount_root:
+        base_name = base_dir.name
+except OSError:
+    pass
+
+print(mount_root)
+print(source_dir.name)
+print(base_name)
+PY
+)"
+    local dir_fields=()
+    while IFS= read -r line; do
+      dir_fields+=("$line")
+    done <<< "$dir_info"
+    HOST_IDEA_DIST_MOUNT_ROOT="${dir_fields[0]:-}"
+    HOST_IDEA_DIST_SOURCE_NAME="${dir_fields[1]:-}"
+    HOST_IDEA_DIST_BASE_DIR_NAME="${dir_fields[2]:-}"
+    HOST_IDEA_DIST_MODE="dir"
+    return 0
+  fi
+
   local source_archive=""
   source_archive="$(resolve_host_idea_dist_archive "$HOST_IDEA_DIST_ARCHIVE" "$HOST_IDEA_ARTIFACTS_DIR")" || {
     echo "[manage] failed to resolve IDEA distribution archive from $HOST_IDEA_ARTIFACTS_DIR" >&2
-    echo "[manage] set HOST_IDEA_DIST_ARCHIVE to an explicit .tar.gz if needed" >&2
+    echo "[manage] set HOST_IDEA_DIST_DIR or HOST_IDEA_DIST_ARCHIVE explicitly if needed" >&2
     exit 1
   }
 
-  python3 - <<'PY' "$source_archive" "$IDEA_DIST_STAGING_DIR"
-import os
+  local archive_info=""
+  archive_info="$(python3 - <<'PY' "$source_archive"
 import pathlib
-import shutil
 import sys
 
-source = pathlib.Path(sys.argv[1]).expanduser()
-staging_dir = pathlib.Path(sys.argv[2]).expanduser()
-target = staging_dir / source.name
-meta = staging_dir / ".source-path"
+source = pathlib.Path(sys.argv[1]).expanduser().resolve()
 
-staging_dir.mkdir(parents=True, exist_ok=True)
+if not source.is_file():
+    raise SystemExit(f"HOST_IDEA_DIST_ARCHIVE does not exist: {source}")
 
-if target.exists():
-    src_stat = source.stat()
-    dst_stat = target.stat()
-    if src_stat.st_size == dst_stat.st_size and int(src_stat.st_mtime) == int(dst_stat.st_mtime):
-        meta.write_text(str(source) + "\n", encoding="utf-8")
-        print(target)
-        raise SystemExit(0)
-
-for existing in staging_dir.glob("*"):
-    if existing.is_file() or existing.is_symlink():
-        existing.unlink()
-    elif existing.is_dir():
-        shutil.rmtree(existing)
-
-shutil.copy2(source, target)
-meta.write_text(str(source) + "\n", encoding="utf-8")
-print(target)
+print(source.parent)
+print(source.name)
 PY
+)"
+  local archive_fields=()
+  while IFS= read -r line; do
+    archive_fields+=("$line")
+  done <<< "$archive_info"
+  HOST_IDEA_DIST_MOUNT_ROOT="${archive_fields[0]:-}"
+  HOST_IDEA_DIST_SOURCE_NAME="${archive_fields[1]:-}"
+  HOST_IDEA_DIST_BASE_DIR_NAME=""
+  HOST_IDEA_DIST_MODE="archive"
+}
+
+prepare_project_mount() {
+  HOST_PROJECT_MOUNT_ROOT=""
+  HOST_PROJECT_SOURCE_NAME=""
+
+  if [[ -z "$HOST_PROJECT_DIR" ]]; then
+    return 0
+  fi
+
+  local project_info=""
+  project_info="$(python3 - <<'PY' "$HOST_PROJECT_DIR"
+import pathlib
+import sys
+
+source_dir = pathlib.Path(sys.argv[1]).expanduser().resolve()
+if not source_dir.is_dir():
+    raise SystemExit(f"HOST_PROJECT_DIR does not exist: {source_dir}")
+
+print(source_dir.parent)
+print(source_dir.name)
+PY
+)"
+  local project_fields=()
+  while IFS= read -r line; do
+    project_fields+=("$line")
+  done <<< "$project_info"
+  HOST_PROJECT_MOUNT_ROOT="${project_fields[0]:-}"
+  HOST_PROJECT_SOURCE_NAME="${project_fields[1]:-}"
 }
 
 compose() {
+  resolve_tbcli_source_mode
   prepare_compose_environment
-  USE_HOST_TBCLI="$USE_HOST_TBCLI" HOST_TBCLI_ROOT="$HOST_TBCLI_ROOT" docker compose -f "$POMERIUM_COMPOSE_FILE" "$@"
+  prepare_idea_distribution_mount
+  prepare_project_mount
+  TBCLI_VERSION="$TBCLI_VERSION" \
+  USE_HOST_TBCLI="$USE_HOST_TBCLI" \
+  HOST_TBCLI_ROOT="$HOST_TBCLI_ROOT" \
+  HOST_IDEA_DIST_MOUNT_ROOT="$HOST_IDEA_DIST_MOUNT_ROOT" \
+  HOST_IDEA_DIST_MODE="$HOST_IDEA_DIST_MODE" \
+  HOST_IDEA_DIST_SOURCE_NAME="$HOST_IDEA_DIST_SOURCE_NAME" \
+  HOST_IDEA_DIST_BASE_DIR_NAME="$HOST_IDEA_DIST_BASE_DIR_NAME" \
+  HOST_PROJECT_MOUNT_ROOT="$HOST_PROJECT_MOUNT_ROOT" \
+  HOST_PROJECT_SOURCE_NAME="$HOST_PROJECT_SOURCE_NAME" \
+  CONTAINER_PROJECT_DIR="$CONTAINER_PROJECT_DIR" \
+  TOOLBOX_MODE="$TOOLBOX_MODE" \
+  TOOLBOX_DATA_DIR="$TOOLBOX_DATA_DIR_CONTAINER" \
+  TOOLBOX_COMPAT_DATA_DIR="$TOOLBOX_COMPAT_DATA_DIR_CONTAINER" \
+  SKIP_TOOLBOX_ENTERPRISE_CONFIG="$SKIP_TOOLBOX_ENTERPRISE_CONFIG_VALUE" \
+  AGENT_TCP_LISTEN_ON_PORT="$AGENT_TCP_LISTEN_ON_PORT_VALUE" \
+  AGENT_FORWARD_PORT="$AGENT_FORWARD_PORT_VALUE" \
+  BACKEND_FORWARD_PORT="$BACKEND_FORWARD_PORT_VALUE" \
+  docker compose -f "$POMERIUM_COMPOSE_FILE" "$@"
 }
 
 REAL_SERVICES="helpers-upstream keycloak verify real-pomerium"
@@ -235,7 +568,6 @@ ensure_compose_file() {
 
 build_image() {
   ensure_compose_file
-  stage_idea_distribution >/dev/null
   compose build "$COMPOSE_SERVICE"
 }
 
@@ -260,16 +592,18 @@ recreate() {
 
 restart_agent() {
   ensure_compose_file
-  compose exec -T -e POMERIUM_STACK_MODE="real" "$COMPOSE_SERVICE" bash -lc '/opt/helpers/docker/agent-stack.sh restart'
+  sync_toolbox_mode_from_container
+  agent_stack_exec '/opt/helpers/docker/agent-stack.sh restart'
   echo "[manage] recent container logs"
   show_outputs
 }
 
 wait_for_agent_info() {
   ensure_compose_file
+  sync_toolbox_mode_from_container
   local attempt
-  for attempt in $(seq 1 60); do
-    if compose exec -T "$COMPOSE_SERVICE" bash -lc 'test -s /home/dev/.local/share/JetBrains/Toolbox/agent-info.json' >/dev/null 2>&1; then
+  for attempt in $(seq 1 "$AGENT_INFO_WAIT_ATTEMPTS"); do
+    if compose exec -T "$COMPOSE_SERVICE" bash -lc "test -s '$TOOLBOX_DATA_DIR_CONTAINER/agent-info.json'" >/dev/null 2>&1; then
       return 0
     fi
     sleep 0.5
@@ -280,26 +614,43 @@ wait_for_agent_info() {
 
 stop_agent() {
   ensure_compose_file
-  compose exec -T "$COMPOSE_SERVICE" bash -lc '/opt/helpers/docker/agent-stack.sh stop'
+  sync_toolbox_mode_from_container
+  agent_stack_exec '/opt/helpers/docker/agent-stack.sh stop'
   echo "[manage] recent container logs"
   show_outputs
 }
 
 raw_print_link() {
   ensure_compose_file
+  sync_toolbox_mode_from_container
   wait_for_agent_info
-  compose exec -T -e POMERIUM_STACK_MODE="real" "$COMPOSE_SERVICE" bash -lc '/opt/helpers/docker/agent-stack.sh print-link'
+  local display_name_override="${1:-}"
+  if [[ -n "$display_name_override" ]]; then
+    compose exec -T \
+      -e POMERIUM_STACK_MODE="real" \
+      -e TOOLBOX_DATA_DIR="$TOOLBOX_DATA_DIR_CONTAINER" \
+      -e TOOLBOX_COMPAT_DATA_DIR="$TOOLBOX_COMPAT_DATA_DIR_CONTAINER" \
+      -e AGENT_TCP_LISTEN_ON_PORT="$AGENT_TCP_LISTEN_ON_PORT_VALUE" \
+      -e AGENT_FORWARD_PORT="$AGENT_FORWARD_PORT_VALUE" \
+      -e BACKEND_FORWARD_PORT="$BACKEND_FORWARD_PORT_VALUE" \
+      -e DISPLAY_NAME_OVERRIDE="$display_name_override" \
+      "$COMPOSE_SERVICE" bash -lc '/opt/helpers/docker/agent-stack.sh print-link'
+  else
+    agent_stack_exec '/opt/helpers/docker/agent-stack.sh print-link'
+  fi
 }
 
 print_json() {
   ensure_compose_file
+  sync_toolbox_mode_from_container
   wait_for_agent_info
-  compose exec -T -e POMERIUM_STACK_MODE="real" "$COMPOSE_SERVICE" bash -lc '/opt/helpers/docker/agent-stack.sh print-json'
+  agent_stack_exec '/opt/helpers/docker/agent-stack.sh print-json'
 }
 
 restart_agent_quiet() {
   ensure_compose_file
-  compose exec -T -e POMERIUM_STACK_MODE="real" "$COMPOSE_SERVICE" bash -lc '/opt/helpers/docker/agent-stack.sh restart' >/dev/null
+  sync_toolbox_mode_from_container
+  agent_stack_exec '/opt/helpers/docker/agent-stack.sh restart' >/dev/null
 }
 
 host_latest_client_log_path() {
@@ -364,7 +715,8 @@ raise SystemExit(1)
 
 print_link() {
   local link
-  link="$(raw_print_link)"
+  local display_name_override="${*:-}"
+  link="$(raw_print_link "$display_name_override")"
   printf '%s\n' "$link"
 }
 
@@ -375,6 +727,7 @@ import pathlib
 import sys
 
 roots = [
+    pathlib.Path("/home/dev/.local/share/JetBrains/Toolbox-Dev/apps/intellij-idea"),
     pathlib.Path("/home/dev/.local/share/JetBrains/Toolbox/apps/intellij-idea"),
     pathlib.Path("/home/dev/.cache/JetBrains"),
     pathlib.Path("/home/dev"),
@@ -413,6 +766,7 @@ markers = [
     "Join link:",
 ]
 roots = [
+    pathlib.Path("/home/dev/.local/share/JetBrains/Toolbox-Dev/apps/intellij-idea"),
     pathlib.Path("/home/dev/.local/share/JetBrains/Toolbox/apps/intellij-idea"),
     pathlib.Path("/home/dev/.cache/JetBrains"),
     pathlib.Path("/home/dev"),
@@ -987,12 +1341,24 @@ PY
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --toolbox)
+      select_toolbox_mode "toolbox"
+      TOOLBOX_MODE_EXPLICIT=1
+      shift
+      ;;
+    --toolbox-dev)
+      select_toolbox_mode "toolbox-dev"
+      TOOLBOX_MODE_EXPLICIT=1
+      shift
+      ;;
     --use-host-tbcli)
-      USE_HOST_TBCLI="1"
+      TBCLI_SOURCE_MODE="host"
+      TBCLI_SOURCE_MODE_EXPLICIT=1
       shift
       ;;
     --download-tbcli)
-      USE_HOST_TBCLI="0"
+      TBCLI_SOURCE_MODE="download"
+      TBCLI_SOURCE_MODE_EXPLICIT=1
       shift
       ;;
     --host-tbcli-path)
@@ -1052,7 +1418,8 @@ case "${1:-help}" in
     find_join_link "${1:-}"
     ;;
   print-link)
-    print_link
+    shift
+    print_link "$@"
     ;;
   print-json)
     print_json

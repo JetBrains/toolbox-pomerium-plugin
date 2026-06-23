@@ -4,6 +4,27 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MANAGE_SH="$SCRIPT_DIR/manage.sh"
 DEFAULTS_FILE="${LINK_HELPER_DEFAULTS_FILE:-$SCRIPT_DIR/../state/link-helper.defaults.real.env}"
+MANAGE_LOCAL_ENV_FILE="${MANAGE_LOCAL_ENV_FILE:-$SCRIPT_DIR/../state/manage.local.env}"
+DEV_LOCAL_ENV_FILE="${DEV_LOCAL_ENV_FILE:-$SCRIPT_DIR/../state/dev.local.env}"
+TOOLBOX_DEV_ENV_FILE="${TOOLBOX_DEV_ENV_FILE:-$SCRIPT_DIR/../state/toolbox-dev.local.env}"
+LOCAL_IDEA_ENV_FILE="${LOCAL_IDEA_ENV_FILE:-$SCRIPT_DIR/../state/local-idea.local.env}"
+
+if [[ -f "$MANAGE_LOCAL_ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$MANAGE_LOCAL_ENV_FILE"
+fi
+if [[ -f "$DEV_LOCAL_ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$DEV_LOCAL_ENV_FILE"
+fi
+if [[ -f "$TOOLBOX_DEV_ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$TOOLBOX_DEV_ENV_FILE"
+fi
+if [[ -f "$LOCAL_IDEA_ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$LOCAL_IDEA_ENV_FILE"
+fi
 
 log() {
   printf '[link-helper] %s\n' "$*"
@@ -26,16 +47,17 @@ import sys
 
 path = pathlib.Path(sys.argv[1])
 keys = [
+    "TOOLBOX_MODE",
     "CLIENT_POMERIUM_ROUTE",
     "POMERIUM_PORT",
     "POMERIUM_INSTANCE",
     "DISPLAY_NAME",
+    "PROJECT_PATH",
     "AGENT_CONNECTION_URL",
     "CONNECTION_KEY",
     "AGENT_AUTH",
     "AGENT_TCP_LISTEN_ON_PORT",
     "AGENT_FORWARD_PORT",
-    "BACKEND_FORWARD_PORT",
 ]
 values = {k: "" for k in keys}
 
@@ -101,14 +123,71 @@ for part in sys.argv[1].split("."):
 print(value if not isinstance(value, (dict,list)) else json.dumps(value, ensure_ascii=False))' "$key" <<<"$json_input"
 }
 
+normalize_backend_route() {
+  local route="$1"
+  python3 - <<'PY' "$route"
+import sys
+from urllib.parse import urlparse, urlunparse
+
+route = sys.argv[1]
+if not route:
+    print(route)
+    raise SystemExit(0)
+
+parsed = urlparse(route)
+if parsed.hostname == "backend.localhost" and parsed.port == 443 and parsed.scheme in {"tcp", "https"}:
+    parsed = parsed._replace(scheme="https", netloc="backend.localhost:443")
+    print(urlunparse(parsed))
+else:
+    print(route)
+PY
+}
+
+normalize_connection_key() {
+  local connection_key="$1"
+  local target_build="$2"
+  python3 - <<'PY' "$connection_key" "$target_build"
+import sys
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+connection_key = sys.argv[1]
+target_build = sys.argv[2]
+
+prefix, sep, fragment = connection_key.partition("#")
+parsed_prefix = urlparse(prefix)
+if parsed_prefix.hostname in {"0.0.0.0", "backend.localhost"} and parsed_prefix.port == 5990:
+    prefix = urlunparse(parsed_prefix._replace(scheme="https", netloc="backend.localhost:5990"))
+
+if not sep:
+    print(prefix)
+    raise SystemExit(0)
+
+pairs = parse_qsl(fragment, keep_blank_values=True)
+updated = False
+normalized = []
+for key, value in pairs:
+    if key == "cb":
+        normalized.append((key, target_build))
+        updated = True
+    else:
+        normalized.append((key, value))
+
+if not updated:
+    normalized.append(("cb", target_build))
+
+print(prefix + "#" + urlencode(normalized))
+PY
+}
+
 generate_link() {
   local client_pomerium_route="$1"
   local pomerium_port="$2"
   local pomerium_instance="$3"
   local display_name="$4"
-  local agent_connection_url="$5"
-  local connection_key_raw="$6"
-  local agent_auth="$7"
+  local project_path="$5"
+  local agent_connection_url="$6"
+  local connection_key_raw="$7"
+  local agent_auth="$8"
 
   local client_pomerium_route_encoded agent_connection_url_encoded connection_key_encoded
   client_pomerium_route_encoded="$(urlencode "$client_pomerium_route")"
@@ -123,6 +202,9 @@ generate_link() {
   if [[ -n "$display_name" ]]; then
     link="${link}&displayName=$(urlencode "$display_name")"
   fi
+  if [[ -n "$project_path" ]]; then
+    link="${link}&projectPath=${project_path}"
+  fi
   link="${link}&agentConnectionUrl=${agent_connection_url_encoded}&agentAuth=${agent_auth}"
   printf '%s\n' "$link"
 }
@@ -135,9 +217,11 @@ main() {
   while IFS= read -r defaults_line; do
     case "$defaults_line" in
       CLIENT_POMERIUM_ROUTE=*) CLIENT_POMERIUM_ROUTE="${defaults_line#CLIENT_POMERIUM_ROUTE=}" ;;
+      TOOLBOX_MODE=*) TOOLBOX_MODE="${defaults_line#TOOLBOX_MODE=}" ;;
       POMERIUM_PORT=*) POMERIUM_PORT="${defaults_line#POMERIUM_PORT=}" ;;
       POMERIUM_INSTANCE=*) POMERIUM_INSTANCE="${defaults_line#POMERIUM_INSTANCE=}" ;;
       DISPLAY_NAME=*) DISPLAY_NAME="${defaults_line#DISPLAY_NAME=}" ;;
+      PROJECT_PATH=*) PROJECT_PATH="${defaults_line#PROJECT_PATH=}" ;;
       AGENT_CONNECTION_URL=*) AGENT_CONNECTION_URL="${defaults_line#AGENT_CONNECTION_URL=}" ;;
       CONNECTION_KEY=*) CONNECTION_KEY="${defaults_line#CONNECTION_KEY=}" ;;
       AGENT_AUTH=*) AGENT_AUTH="${defaults_line#AGENT_AUTH=}" ;;
@@ -159,16 +243,24 @@ main() {
     agent_auth_default="$(json_get "$json_output" "agent_auth" 2>/dev/null || true)"
   fi
 
-  local client_pomerium_route_default="${CLIENT_POMERIUM_ROUTE:-tcp://backend.localhost:443}"
+  local client_pomerium_route_default="${CLIENT_POMERIUM_ROUTE:-https://backend.localhost:443}"
+  local toolbox_mode_default="${TOOLBOX_MODE:-toolbox}"
   local pomerium_port_default="${POMERIUM_PORT:-443}"
   local pomerium_instance_default="${POMERIUM_INSTANCE:-}"
   local display_name_default="${DISPLAY_NAME:-}"
+  local project_path_default="${PROJECT_PATH:-${CONTAINER_PROJECT_DIR:-/home/dev/projects/test_project}}"
   local agent_url_default="${AGENT_CONNECTION_URL:-https://agent.localhost:443}"
-  local connection_key_default="${CONNECTION_KEY:-tcp://0.0.0.0:5990#jt=ca7cd969-f4dc-4d58-bdad-3ab4f3f9e8d6&p=IU&fp=E80F9EA7A46A357ED269F7F9F7E628F0A70BB6251A69E96F86DB658A96029140&cb=253.32098.37&newUi=true&jb=21.0.10b1163.110}"
+  local connection_key_build="${CONNECTION_KEY_BUILD:-261.24374.151}"
+  local connection_key_default="${CONNECTION_KEY:-https://backend.localhost:5990#jt=ca7cd969-f4dc-4d58-bdad-3ab4f3f9e8d6&p=IU&fp=E80F9EA7A46A357ED269F7F9F7E628F0A70BB6251A69E96F86DB658A96029140&cb=${connection_key_build}&newUi=true&jb=21.0.10b1163.110}"
   local agent_auth_file_default="${AGENT_AUTH:-}"
   local agent_port_default="${AGENT_TCP_LISTEN_ON_PORT:-}"
   local agent_forward_port_default="${AGENT_FORWARD_PORT:-}"
-  local backend_forward_port_default="${BACKEND_FORWARD_PORT:-5990}"
+  local backend_forward_port_default="${BACKEND_FORWARD_PORT:-}"
+  if [[ "$toolbox_mode_default" == "toolbox" && -z "$backend_forward_port_default" ]]; then
+    backend_forward_port_default="5990"
+  fi
+  client_pomerium_route_default="$(normalize_backend_route "$client_pomerium_route_default")"
+  connection_key_default="$(normalize_connection_key "$connection_key_default" "$connection_key_build")"
 
   if [[ -n "$agent_auth_file_default" ]]; then
     agent_auth_default="$agent_auth_file_default"
@@ -177,47 +269,59 @@ main() {
   printf '\n'
   log "We are filling the deep link fields"
   printf '  route: clientPomeriumRoute, pomeriumPort, pomeriumInstance (optional)\n'
+  printf '  mode: toolboxMode (toolbox or toolbox-dev)\n'
   printf '  identity: displayName (optional)\n'
+  printf '  project: projectPath (optional)\n'
   printf '  backend: connectionKey\n'
   printf '  agent: agentConnectionUrl, agentAuth\n'
-  printf '  runtime: agent tcp port, agent forwarder port, backend relay port (optional)\n'
+  printf '  runtime: agent tcp port, agent forwarder port, backend relay port\n'
   printf '\n'
 
-  local client_pomerium_route pomerium_port pomerium_instance display_name agent_connection_url connection_key_raw agent_auth agent_tcp_listen_on_port agent_forward_port backend_forward_port
+  local client_pomerium_route pomerium_port pomerium_instance display_name project_path agent_connection_url connection_key_raw agent_auth agent_tcp_listen_on_port agent_forward_port backend_forward_port
+  local toolbox_mode
+  toolbox_mode="$(prompt_default "toolboxMode (toolbox or toolbox-dev)" "$toolbox_mode_default")"
   client_pomerium_route="$(prompt_default "clientPomeriumRoute" "$client_pomerium_route_default")"
   pomerium_port="$(prompt_default "pomeriumPort" "$pomerium_port_default")"
   pomerium_instance="$(prompt_default "pomeriumInstance (optional, leave empty if not needed)" "$pomerium_instance_default")"
   display_name="$(prompt_default "displayName (optional, label shown in Toolbox)" "$display_name_default")"
+  project_path="$(prompt_default "projectPath (optional, path inside remote/container IDE host)" "$project_path_default")"
   agent_connection_url="$(prompt_default "agentConnectionUrl" "$agent_url_default")"
   connection_key_raw="$(prompt_default "connectionKey" "$connection_key_default")"
   agent_auth="$(prompt_default "agentAuth" "$agent_auth_default")"
   agent_tcp_listen_on_port="$(prompt_default "agentTcpListenOnPort (optional, leave empty for automatic)" "$agent_port_default")"
   agent_forward_port="$(prompt_default "agentForwardPort (optional, leave empty to disable)" "$agent_forward_port_default")"
-  backend_forward_port="$(prompt_default "backendRelayPort (optional, leave empty to disable)" "$backend_forward_port_default")"
+  backend_forward_port="$(prompt_default "backendForwardPort (optional, leave empty to disable)" "$backend_forward_port_default")"
+
+  client_pomerium_route="$(normalize_backend_route "$client_pomerium_route")"
+  connection_key_raw="$(normalize_connection_key "$connection_key_raw" "$connection_key_build")"
 
   local link
-  link="$(generate_link "$client_pomerium_route" "$pomerium_port" "$pomerium_instance" "$display_name" "$agent_connection_url" "$connection_key_raw" "$agent_auth")"
+  link="$(generate_link "$client_pomerium_route" "$pomerium_port" "$pomerium_instance" "$display_name" "$project_path" "$agent_connection_url" "$connection_key_raw" "$agent_auth")"
 
   printf '\n'
   log "Summary"
   printf '  defaults file: %s\n' "$DEFAULTS_FILE"
+  printf '  toolboxMode: %s\n' "$toolbox_mode"
   printf '  clientPomeriumRoute: %s\n' "$client_pomerium_route"
   if [[ -n "$pomerium_instance" ]]; then
     printf '  pomeriumInstance: %s\n' "$pomerium_instance"
   fi
   printf '  displayName: %s\n' "${display_name:-<empty>}"
+  printf '  projectPath: %s\n' "${project_path:-<empty>}"
   printf '  agentConnectionUrl: %s\n' "$agent_connection_url"
   printf '  connectionKey: %s\n' "$connection_key_raw"
   printf '  agentAuth: %s\n' "${agent_auth:-<empty>}"
   printf '  agentTcpListenOnPort: %s\n' "${agent_tcp_listen_on_port:-<automatic>}"
   printf '  agentForwardPort: %s\n' "${agent_forward_port:-<disabled>}"
-  printf '  backendRelayPort: %s\n' "${backend_forward_port:-<disabled>}"
+  printf '  backendForwardPort: %s\n' "${backend_forward_port:-<disabled>}"
   printf '\n'
   cat >"$DEFAULTS_FILE" <<EOF
+TOOLBOX_MODE=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$toolbox_mode")
 CLIENT_POMERIUM_ROUTE=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$client_pomerium_route")
 POMERIUM_PORT=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$pomerium_port")
 POMERIUM_INSTANCE=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$pomerium_instance")
 DISPLAY_NAME=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$display_name")
+PROJECT_PATH=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$project_path")
 AGENT_CONNECTION_URL=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$agent_connection_url")
 CONNECTION_KEY=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$connection_key_raw")
 AGENT_AUTH=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$agent_auth")

@@ -6,6 +6,7 @@ import com.jetbrains.plugin.structure.toolbox.ToolboxPluginDescriptor
 import org.gradle.kotlin.dsl.`java-library`
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.nio.file.Path
+import java.io.File
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 
@@ -24,13 +25,37 @@ plugins {
 
 group = "toolbox.pomerium.plugin"
 
+val toolboxApiLocalRepo = providers.gradleProperty("toolboxApiLocalRepo")
+    .orElse(providers.environmentVariable("TOOLBOX_API_LOCAL_REPO"))
+    .orElse("")
+    .get()
+val toolboxApiLocalRepoDir = File(toolboxApiLocalRepo)
+val hasLocalToolboxApiRepo = toolboxApiLocalRepo.isNotBlank() &&
+    toolboxApiLocalRepoDir.resolve("com/jetbrains/toolbox/core-api").isDirectory
+val isToolboxDevInstall = gradle.startParameter.taskNames.any {
+    it.substringAfterLast(':') == "installPluginForToolboxDev"
+}
+val useLocalToolboxApi = hasLocalToolboxApiRepo && (
+    isToolboxDevInstall ||
+        providers.gradleProperty("useLocalToolboxApi")
+            .orElse(providers.environmentVariable("USE_LOCAL_TOOLBOX_API"))
+            .map { it.equals("true", ignoreCase = true) || it in setOf("1", "yes", "on") }
+            .orElse(false)
+            .get()
+)
+val defaultToolboxApiVersion = if (useLocalToolboxApi) "1.12.SNAPSHOT" else libs.versions.toolbox.plugin.api.get()
+val toolboxApiVersion = providers.gradleProperty("toolboxApiVersionOverride")
+    .orElse(providers.environmentVariable("TOOLBOX_API_VERSION_OVERRIDE"))
+    .orElse(defaultToolboxApiVersion)
+    .get()
+
 // Auto-bump patch on every build invocation so Toolbox always sees a newer version after rebuild.
 // Counter is persisted in .gradle/ (gitignored) and only advances when an actual build task is requested,
 // not on read-only invocations like `./gradlew tasks` or IDE project sync.
 val pluginBaseVersion = "1.0"
 val pluginPatchFile = layout.projectDirectory.file(".gradle/plugin-patch.txt").asFile
 val pluginBuildTriggers = setOf(
-    "installPlugin", "pluginZip", "build", "assemble", "shadowJar", "extensionJson", "jar"
+    "installPlugin", "installPluginForToolboxDev", "pluginZip", "build", "assemble", "shadowJar", "extensionJson", "jar"
 )
 val isBuildInvocation = gradle.startParameter.taskNames.any { name ->
     name.substringAfterLast(':') in pluginBuildTriggers
@@ -50,13 +75,20 @@ kotlin {
 }
 
 dependencies {
-    compileOnly(libs.bundles.toolbox.plugin.api)
+    compileOnly("com.jetbrains.toolbox:core-api:$toolboxApiVersion")
+    compileOnly("com.jetbrains.toolbox:ui-api:$toolboxApiVersion")
+    compileOnly("com.jetbrains.toolbox:remote-dev-api:$toolboxApiVersion")
     compileOnly(libs.bundles.serialization)
     compileOnly(libs.coroutines.core)
 }
 
 
 repositories {
+    if (useLocalToolboxApi) {
+        maven {
+            url = uri(toolboxApiLocalRepoDir)
+        }
+    }
     mavenCentral()
     maven("https://packages.jetbrains.team/maven/p/tbx/toolbox-api")
     maven("https://www.jetbrains.com/intellij-repository/releases")
@@ -83,7 +115,9 @@ jvmWrapper {
 }
 
 dependencies {
-    compileOnly(libs.bundles.toolbox.plugin.api)
+    compileOnly("com.jetbrains.toolbox:core-api:$toolboxApiVersion")
+    compileOnly("com.jetbrains.toolbox:ui-api:$toolboxApiVersion")
+    compileOnly("com.jetbrains.toolbox:remote-dev-api:$toolboxApiVersion")
     compileOnly(libs.bundles.serialization)
     implementation(libs.bundles.toolbox.plugin.http)
     implementation(libs.okhttp)
@@ -97,7 +131,9 @@ dependencies {
     testImplementation(libs.coroutines.test)
     testImplementation(libs.coroutines.core)
     testImplementation(libs.mockwebserver)
-    testImplementation(libs.bundles.toolbox.plugin.api)
+    testImplementation("com.jetbrains.toolbox:core-api:$toolboxApiVersion")
+    testImplementation("com.jetbrains.toolbox:ui-api:$toolboxApiVersion")
+    testImplementation("com.jetbrains.toolbox:remote-dev-api:$toolboxApiVersion")
     testRuntimeOnly(libs.slf4j.simple)
 }
 
@@ -152,7 +188,7 @@ fun generateExtensionJson(extensionJson: ExtensionJson, destinationFile: Path) {
     val descriptor = ToolboxPluginDescriptor(
         id = extensionJson.id,
         version = extensionJson.version,
-        apiVersion = libs.versions.toolbox.plugin.api.get(),
+        apiVersion = toolboxApiVersion,
         meta = ToolboxMeta(
             name = extensionJson.meta.name,
             description = extensionJson.meta.description,
