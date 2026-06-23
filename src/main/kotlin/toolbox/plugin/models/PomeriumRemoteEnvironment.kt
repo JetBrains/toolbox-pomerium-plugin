@@ -80,9 +80,6 @@ class PomeriumEnvironment(
     init {
         logger.info("Initializing pomerium environment")
         logger.info("Environment name: $displayName")
-        logger.info("Environment URL: $url")
-        logger.info("Environment agent URL: $agentUrl")
-        logger.info("Environment URL: $clientRoute")
         logger.info("Environment '${id}': initial state ${EnvironmentState.Disconnected::class.simpleName}")
     }
 

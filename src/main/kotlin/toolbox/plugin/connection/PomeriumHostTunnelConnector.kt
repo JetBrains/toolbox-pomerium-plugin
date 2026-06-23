@@ -25,7 +25,7 @@ class PomeriumHostTunnelConnector(
         require(protocol == HostTunnelConnector.Protocol.TCP) {
             "Only TCP is supported by PomeriumHostTunnelConnector2"
         }
-        logger.info("Forwarding IDE port via PomeriumHostTunnelConnector to ${remoteAddress.hostAddress}:$remotePort")
+        logger.info("Forwarding IDE port via PomeriumHostTunnelConnector to remotePort=$remotePort")
         return PomeriumForwardedConnectionHandle(
             tunneler, logger, connectionInfo, devEnv, environmentScope, remoteAddress, remotePort, localAddress
         )

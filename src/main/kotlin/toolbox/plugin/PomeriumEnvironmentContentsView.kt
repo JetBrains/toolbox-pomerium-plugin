@@ -140,7 +140,7 @@ class PomeriumBasedAgentConnectionHandle(
         return try {
             logger.debug("$connectionLogPrefix: start")
             val (_, agentRelayUrl, agentRelayAuthData, pomeriumPort) = connectionInfo
-            logger.info("Starting agent tunnel to remote address: $agentRelayUrl")
+            logger.info("Starting agent tunnel")
             val route = normalizePomeriumRoute(URI(agentRelayUrl), useTls = true)
             tunnelRoute = route
 

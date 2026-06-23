@@ -64,7 +64,7 @@ Optional top-level params:
 Example:
 
 ```text
-jetbrains://remote-dev/jetbrains.toolbox.pomerium/new-environment#clientPomeriumRoute=https%3A%2F%2Fbackend.localhost%3A443&connectionKey=https%3A%2F%2Fbackend.localhost%3A5990%23jt%3Dabc%26p%3DIU%26cb%3D261.24374.151&displayName=My%20Dev%20Env&projectPath=/home/dev/projects/test_project&agentPomeriumRoute=https%3A%2F%2Fagent.localhost%3A443&agentAuth=token
+jetbrains://remote-dev/jetbrains.toolbox.pomerium/new-environment#clientPomeriumRoute=https%3A%2F%2Fbackend.localhost%3A443&connectionKey=https%3A%2F%2Fbackend.localhost%3A5990%23jt%3Dabc%26p%3DIU%26cb%3D261.24374.151&displayName=My%20Dev%20Env&projectPath=/home/dev/projects/test_project&agentPomeriumRoute=https%3A%2F%2Fagent.localhost%3A443&agentAuth=%3Cagent-auth%3E
 ```
 
 `connectionKey` format:

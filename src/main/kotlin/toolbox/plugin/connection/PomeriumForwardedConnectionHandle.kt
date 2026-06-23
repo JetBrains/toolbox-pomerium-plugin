@@ -37,16 +37,9 @@ class PomeriumForwardedConnectionHandle(
     override suspend fun getForwardedConnection(): ForwardedConnection {
         val route = normalizePomeriumRoute(URI(connectionInfo.url), useTls = true)
         logger.info(
-            "Starting forwarded IDE tunnel. " +
-                    "requestedRemote=${remoteAddress.hostAddress}:$remotePort, " +
-                    "localAddress=${localAddress.hostAddress}, " +
-                    "configuredRoute=${route}, " +
-                    "pomeriumPort=${connectionInfo.pomeriumPort}"
+            "Starting forwarded IDE tunnel for requestedRemotePort=$remotePort, pomeriumPort=${connectionInfo.pomeriumPort}"
         )
         tunnelRoute = route
-        logger.info(
-            "Resolved forwarded IDE route: scheme=${route.scheme}, host=${route.host}, port=${route.port}, authority=${route.authority}"
-        )
         val port = tunneler.startTunnel(
             route = route,
             authScope = environmentScope,

@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import toolbox.auth.PomeriumAuthProvider
+import toolbox.auth.PomeriumConstants
 import toolbox.auth.PomeriumTunneler
 import toolbox.auth.normalizePomeriumRoute
 import toolbox.plugin.models.*
@@ -113,7 +114,7 @@ class PomeriumRemoteProvider(
                 &jb=21.0.10b1163.110
                 &remoteId=
         &agentPomeriumRoute=https%3A%2F%2Flocalhost%3A44000
-        &agentAuth=319999dd35457fc53be9235929ee5ea2
+        &agentAuth=<agent-auth>
 */
         val paramSource = when {
             !uri.rawFragment.isNullOrBlank() -> uri.rawFragment
@@ -131,9 +132,9 @@ class PomeriumRemoteProvider(
                 "projectPath",
                 "p",
                 "cb",
-                "connectionKey",
-                "agentPomeriumRoute",
-                "agentAuth"
+                PomeriumConstants.PARAM_CONNECTION_KEY,
+                PomeriumConstants.PARAM_AGENT_ROUTE,
+                PomeriumConstants.PARAM_AGENT_AUTH
             )
         )
 
@@ -150,9 +151,9 @@ class PomeriumRemoteProvider(
                 productCode = metadata.productCode,
                 buildNumber = metadata.buildNumber,
                 agentPomeriumRoute = decodeUriIfNeeded(
-                    params["agentPomeriumRoute"] ?: error("Missing agentPomeriumRoute")
+                    params[PomeriumConstants.PARAM_AGENT_ROUTE] ?: error("Missing agentPomeriumRoute")
                 ),
-                agentAuth = params["agentAuth"]?.let(::decodeUriIfNeeded)?.trim()
+                agentAuth = params[PomeriumConstants.PARAM_AGENT_AUTH]?.let(::decodeUriIfNeeded)?.trim()
                     ?: error("Missing agent connectionAuth"),
             )
         )

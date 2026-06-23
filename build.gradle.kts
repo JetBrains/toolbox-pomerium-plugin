@@ -256,9 +256,6 @@ val pluginMarketplaceToken: String = if (toolboxPluginPropertiesFile.exists()) {
         "Please create the file and set pluginMarketplaceToken property to a token obtained from the marketplace.")
 }
 
-println("Plugin Marketplace Token: ${pluginMarketplaceToken.take(5)}*****")
-
-
 // Work in progress. The public version of Marketplace will not accept the plugin yet
 val uploadPlugin by tasks.registering {
     dependsOn(pluginZip)
