@@ -13,12 +13,15 @@ import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.mock
 import toolbox.auth.AuthProvider
+import toolbox.auth.PomeriumTunnelCreationException
+import toolbox.auth.PomeriumTunnelState
 import toolbox.auth.PomeriumTunneler
 import java.net.Socket
 import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.URI
 import kotlin.random.Random
+import kotlin.time.Duration.Companion.milliseconds
 
 class PomeriumTunnelerTest {
     @JvmField
@@ -222,5 +225,50 @@ class PomeriumTunnelerTest {
 
         Thread.sleep(100)
         Assertions.assertFalse(pomeriumTunneler.isTunneling())
+    }
+
+    @Test
+    fun `test preflight 503 fails tunnel creation without reconnect state`() = runTest {
+        val failingPomerium = MockPomerium(connectStatusCode = 503)
+        try {
+            val authProvider = mock<AuthProvider> {
+                onBlocking { getAuth(any(), any()) } doReturn CompletableDeferred(failingPomerium.token)
+            }
+            val states = mutableListOf<PomeriumTunnelState>()
+            val pomeriumTunneler = PomeriumTunneler(
+                authProvider,
+                null,
+                100,
+                null,
+                preflightMaxAttempts = 2,
+                preflightRetryLongDelay = 1.milliseconds,
+            )
+            val mockPomeriumPort = failingPomerium.startMockPomerium()
+            val uri = URI("tcp://${failingPomerium.route}")
+            pomeriumTunneler.use {
+                try {
+                    it.startTunnel(
+                        uri,
+                        authScope = backgroundScope,
+                        pomeriumPort = mockPomeriumPort,
+                        useTls = false,
+                        ensureUpstreamReady = true,
+                        onStateChange = states::add,
+                    )
+                    Assertions.fail("Expected preflight 503 to fail tunnel creation")
+                } catch (_: PomeriumTunnelCreationException) {
+                    // Expected
+                }
+            }
+
+            Assertions.assertEquals(2, failingPomerium.requestCount)
+            Assertions.assertTrue(states.contains(PomeriumTunnelState.WaitingForAuthorization))
+            Assertions.assertTrue(states.contains(PomeriumTunnelState.PomeriumUnavailable))
+            Assertions.assertTrue(states.contains(PomeriumTunnelState.PomeriumTunnelCreationError))
+            Assertions.assertFalse(states.contains(PomeriumTunnelState.Reconnecting))
+            Assertions.assertFalse(states.contains(PomeriumTunnelState.Connected))
+        } finally {
+            failingPomerium.stop()
+        }
     }
 }

@@ -49,11 +49,12 @@ Optional top-level params:
 - `pomeriumPort` (defaults to `443`)
 - `pomeriumInstance`
 - `displayName`
+- `projectPath`
 
 Example:
 
 ```text
-jetbrains://remote-dev/jetbrains.toolbox.pomerium/new-environment#clientPomeriumRoute=tcp%3A%2F%2Fbackend.localhost%3A443&connectionKey=tcp%3A%2F%2F0.0.0.0%3A5990%23jt%3Dabc%26p%3DIU%26cb%3D253.32098.37&displayName=My%20Dev%20Env&agentConnectionUrl=https%3A%2F%2Fagent.localhost%3A443&agentAuth=token
+jetbrains://remote-dev/jetbrains.toolbox.pomerium/new-environment#clientPomeriumRoute=https%3A%2F%2Fbackend.localhost%3A443&connectionKey=https%3A%2F%2Fbackend.localhost%3A5990%23jt%3Dabc%26p%3DIU%26cb%3D261.24374.151&displayName=My%20Dev%20Env&projectPath=/home/dev/projects/test_project&agentConnectionUrl=https%3A%2F%2Fagent.localhost%3A443&agentAuth=token
 ```
 
 `connectionKey` format:
@@ -63,6 +64,40 @@ tcp://<host>:<port>#jt=<id>&p=<productCode>&fp=<fingerprint>&cb=<build>&newUi=<b
 ```
 
 The plugin parses metadata from `connectionKey` fragment and uses it to initiate IDE attach flow.
+
+## Toolbox IDE Discovery File
+
+Toolbox can be pointed at an IDE distribution by writing an `environment.json`
+file into the Toolbox data directory inside the upstream container. In the
+Docker helper this is usually:
+
+```text
+/home/dev/.local/share/JetBrains/Toolbox/environment.json
+```
+
+Example file:
+
+```json
+{
+  "tools": {
+    "location": [
+      {
+        "path": "/opt/idea-dist"
+      }
+    ]
+  }
+}
+```
+
+For the helper stack, generate this interactively with:
+
+```bash
+cd helpers
+./scripts/generate-toolbox-environment.sh
+```
+
+When prompted for the IDE path, use the path as seen from the upstream
+container, for example `/opt/idea-dist`.
 
 ## Localization
 

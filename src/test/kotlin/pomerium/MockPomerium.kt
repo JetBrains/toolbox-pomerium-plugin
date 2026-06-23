@@ -17,7 +17,11 @@ import rawhttp.core.body.EagerBodyReader
 import toolbox.auth.PomeriumAuthProvider
 import kotlin.random.Random
 
-class MockPomerium {
+class MockPomerium(
+    private val connectStatusCode: Int = 200,
+    private val connectReason: String = if (connectStatusCode == 200) "OK" else "Service Unavailable",
+    private val connectResponseBody: String? = if (connectStatusCode == 200) null else "<html>Service Unavailable</html>",
+) {
     val token = Random.nextDouble().toString()
     val route = "localhost:2801"
     var requestCount = 0
@@ -79,13 +83,15 @@ class MockPomerium {
 
                                 val response = RawHttpResponse(
                                     null, null,
-                                    StatusLine(HttpVersion.HTTP_1_1, 200, "OK"),
+                                    StatusLine(HttpVersion.HTTP_1_1, connectStatusCode, connectReason),
                                     RawHttpHeaders.empty(),
-                                    null
+                                    connectResponseBody?.let { EagerBodyReader(it.encodeToByteArray()) }
                                 )
                                 response.writeTo(writeChannel.toOutputStream())
                                 requestCount++
-                                readChannel.joinTo(writeChannel, true)
+                                if (connectStatusCode == 200) {
+                                    readChannel.joinTo(writeChannel, true)
+                                }
                             }
                         }
                     }

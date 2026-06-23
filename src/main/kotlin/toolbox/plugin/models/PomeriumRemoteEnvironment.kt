@@ -3,7 +3,10 @@ package toolbox.plugin.models
 import com.jetbrains.toolbox.api.core.diagnostics.Logger
 import com.jetbrains.toolbox.api.localization.LocalizableStringFactory
 import com.jetbrains.toolbox.api.remoteDev.*
+import com.jetbrains.toolbox.api.remoteDev.TabDefinition.Companion.projectsTab
 import com.jetbrains.toolbox.api.remoteDev.TabDefinition.Companion.toolsTab
+import com.jetbrains.toolbox.api.remoteDev.connection.RemoteToolsHelper
+import com.jetbrains.toolbox.api.remoteDev.environments.CachedIdeStub
 import com.jetbrains.toolbox.api.remoteDev.environments.CachedProject
 import com.jetbrains.toolbox.api.remoteDev.environments.EnvironmentContentsView
 import com.jetbrains.toolbox.api.remoteDev.states.CustomRemoteEnvironmentStateV2
@@ -28,6 +31,13 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import toolbox.plugin.PomeriumEnvironmentContentsView
 import java.io.Closeable
+import java.net.URI
+import java.util.concurrent.ConcurrentHashMap
+
+private data class ConnectionLease(
+    val kind: String,
+    val route: URI,
+)
 
 sealed interface EnvironmentState {
     data object Disconnected : EnvironmentState
@@ -60,16 +70,19 @@ fun PomeriumTunnelState.toEnvironmentState(): EnvironmentState = when (this) {
 class PomeriumEnvironment(
     private val displayName: String,
     val url: String,
-    val clientRoute: String,
+    clientRoute: String,
     val agentUrl: String,
     val agentAuthData: String?,
     val link: PomeriumLink,
-    tunneler: PomeriumTunneler,
+    private val tunneler: PomeriumTunneler,
     private val logger: Logger,
     i18n: LocalizableStringFactory,
     colorPalette: EnvironmentStateColorPalette,
+    remoteToolsHelper: RemoteToolsHelper,
     pluginScope: CoroutineScope,
+    private val onDeleteRequested: () -> Unit,
 ) : RemoteProviderEnvironment(displayName), Closeable {
+    private val activeConnectionLeases = ConcurrentHashMap<String, ConnectionLease>()
 
     // Owns per-environment lifetime. Cancelling this cancels every in-flight auth job
     // and any other coroutine launched from this environment (handles, contents view).
@@ -96,6 +109,7 @@ class PomeriumEnvironment(
         logger,
         this,
         tunneler,
+        remoteToolsHelper,
         ::handleBeforeProjectOpen,
         DevEnvConnectionInfo(
             this.url,
@@ -124,14 +138,14 @@ class PomeriumEnvironment(
         // Cancel any in-flight auth / tunnel jobs that were launched into the environment scope.
         // children() avoids cancelling environmentScope itself, so reconnect from the same env still works.
         environmentScope.coroutineContext[Job]?.children?.forEach { it.cancel() }
+        activeConnectionLeases.clear()
         setEnvironmentState(EnvironmentState.Disconnected)
         connectionRequest.emit(false)
     }
 
     override suspend fun getContentsView(): EnvironmentContentsView = contentsView
 
-    override fun setVisible(visibilityState: EnvironmentVisibilityState) {
-    }
+    override fun setVisible(visibilityState: EnvironmentVisibilityState) {}
 
     override val supportedFeatures = setOf(RemoteEnvironmentAbility.CAN_RENAME, RemoteEnvironmentAbility.ALWAYS_CONNECTED)
 
@@ -141,12 +155,18 @@ class PomeriumEnvironment(
         get() = setOf(
             SettingsSection.ABOUT_ENVIRONMENT, SettingsSection.TOOLS
         )
-    override val pageTabs: List<TabDefinition> = listOf(toolsTab())
+    override val pageTabs: List<TabDefinition> =
+        if (link.projectPath.isNullOrBlank()) listOf(toolsTab()) else listOf(projectsTab(), toolsTab())
     override val state: StateFlow<RemoteEnvironmentState> =
         environmentState.map { envState ->
             when (envState) {
                 EnvironmentState.Disconnected -> StandardRemoteEnvironmentState.Inactive
-                EnvironmentState.Connecting -> StandardRemoteEnvironmentState.Initializing
+                EnvironmentState.Connecting -> CustomRemoteEnvironmentStateV2(
+                    i18n.ptrl("Waiting for connection"),
+                    colorPalette.getColor(StandardRemoteEnvironmentState.Initializing),
+                    true,
+                    EnvironmentStateIcons.Connecting,
+                )
                 EnvironmentState.Connected -> StandardRemoteEnvironmentState.Active
                 EnvironmentState.WaitingForAuthorization -> CustomRemoteEnvironmentStateV2(
                     i18n.ptrl("Waiting for authorization"),
@@ -169,7 +189,7 @@ class PomeriumEnvironment(
                 EnvironmentState.Reconnecting -> CustomRemoteEnvironmentStateV2(
                     i18n.ptrl("Reconnecting"),
                     colorPalette.getColor(StandardRemoteEnvironmentState.Initializing),
-                    false,
+                    true,
                     EnvironmentStateIcons.Connecting,
                 )
                 EnvironmentState.AgentUnavailable -> CustomRemoteEnvironmentStateV2(
@@ -193,13 +213,13 @@ class PomeriumEnvironment(
                 EnvironmentState.PomeriumUnavailable -> CustomRemoteEnvironmentStateV2(
                     i18n.ptrl("Pomerium is unavailable"),
                     colorPalette.getColor(StandardRemoteEnvironmentState.Unreachable),
-                    false,
+                    true,
                     EnvironmentStateIcons.Offline,
                 )
                 EnvironmentState.PomeriumAuthorizationError -> CustomRemoteEnvironmentStateV2(
                     i18n.ptrl("Authorization failed"),
                     colorPalette.getColor(StandardRemoteEnvironmentState.Failed),
-                    false,
+                    true,
                     EnvironmentStateIcons.Error,
                 )
                 EnvironmentState.PomeriumTunnelCreationError -> CustomRemoteEnvironmentStateV2(
@@ -215,13 +235,87 @@ class PomeriumEnvironment(
         val previousState = environmentState.value
         logger.info("Environment '$id': ${previousState::class.simpleName} -> ${newState::class.simpleName}")
         environmentState.value = newState
+        if (newState == EnvironmentState.Connected && previousState != EnvironmentState.Connected) {
+            contentsView.refreshInstalledIdeListAsync()
+        }
+    }
+
+    fun registerConnectionLease(leaseId: String, kind: String, route: URI) {
+        val lease = ConnectionLease(kind, route)
+        if (activeConnectionLeases.putIfAbsent(leaseId, lease) == null) {
+            logger.info(
+                "Environment '$id': registered $kind lease '$leaseId' for $route, activeLeases=${activeConnectionLeases.size}"
+            )
+        }
+    }
+
+    fun releaseConnectionLease(leaseId: String, kind: String, route: URI) {
+        if (activeConnectionLeases.remove(leaseId) == null) {
+            logger.debug("Environment '$id': lease '$leaseId' already released for $kind route $route")
+            return
+        }
+
+        val remaining = activeConnectionLeases.size
+        logger.info(
+            "Environment '$id': released $kind lease '$leaseId' for $route, activeLeases=$remaining"
+        )
+        if (remaining == 0) {
+            setEnvironmentState(EnvironmentState.Disconnected)
+        } else {
+            logger.info("Environment '$id': keeping state because $remaining lease(s) are still active")
+        }
+    }
+
+    @Deprecated("Use deleteActionFlow instead", ReplaceWith("deleteActionFlow"))
+    override fun onDelete() {
+        logger.info("Environment '$id': delete requested")
+        close()
+        onDeleteRequested()
     }
 
     override fun close() {
+        val activeLeases = activeConnectionLeases.values.toList()
+        activeConnectionLeases.clear()
+        activeLeases.forEach { lease ->
+            runCatching { tunneler.closeTunnel(lease.route) }
+                .onFailure { error ->
+                    logger.warn("Environment '$id': failed to close ${lease.kind} tunnel for ${lease.route}: ${error.message}")
+                }
+        }
+        connectionRequest.tryEmit(false)
+        environmentState.value = EnvironmentState.Disconnected
         environmentScope.cancel()
     }
 
-    fun getProjects(): List<CachedProject> {
-        TODO("Not yet implemented")
+    fun getCachedIdes(): List<CachedIdeStub> {
+        val ideHint = link.ideHint?.trim()?.takeIf { it.isNotEmpty() } ?: return emptyList()
+        return listOf(
+            LinkCachedIdeStub(ideHint)
+        )
     }
+
+    fun getProjects(): List<CachedProject> {
+        val projectPath = link.projectPath?.trim()?.takeIf { it.isNotEmpty() } ?: return emptyList()
+        val projectName = projectPath
+            .trimEnd('/', '\\')
+            .substringAfterLast('/')
+            .substringAfterLast('\\')
+            .ifBlank { projectPath }
+
+        return listOf(
+            CachedProject(
+                path = projectPath,
+                name = projectName,
+                location = projectPath,
+            ).apply {
+                setBeforeProjectOpenedHook { handleBeforeProjectOpen() }
+            }
+        )
+    }
+}
+
+private data class LinkCachedIdeStub(
+    override val productCode: String,
+) : CachedIdeStub {
+    override fun isRunning(): Boolean? = null
 }

@@ -1,9 +1,6 @@
 package toolbox.plugin.models
 
 import kotlinx.coroutines.flow.MutableStateFlow
-import java.net.URI
-
-
 
 data class DevEnvConnectionInfo (
     val url: String,
@@ -14,11 +11,12 @@ data class DevEnvConnectionInfo (
 
 data class PomeriumLink(
     val pomeriumInstance: String?,
-    val pomeriumPort: Int
+    val pomeriumPort: Int,
+    val projectPath: String? = null,
+    val ideHint: String? = null,
 )
 enum class AuthState {
     LoggedOut,
-    LoggedIn
 }
 enum class AgentState {
     Available,
