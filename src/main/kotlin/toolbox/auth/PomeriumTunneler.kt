@@ -12,7 +12,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import org.slf4j.LoggerFactory
 import rawhttp.core.*
 import rawhttp.core.errors.InvalidHttpResponse
 import java.io.Closeable
@@ -77,7 +76,6 @@ class PomeriumTunneler(
             authProvider.getAuth(route, authScope).await() // Populate auth if required
             //onStateChange(PomeriumTunnelState.Connecting)
             if (ensureUpstreamReady) {
-                logger?.info("Ensure upstream ready for ${formatConnectContext(route, pomeriumHost, pomeriumPort, useTls, phase = "preflight")}")
                 ensureUpstreamReady(route, pomeriumHost, pomeriumPort, useTls, authScope, onStateChange)
                 onStateChange(PomeriumTunnelState.Connected)
             }
@@ -97,12 +95,12 @@ class PomeriumTunneler(
                             localServerSocket.accept()
                         } catch (e: Exception) {
                             if (isActive) {
-                                LOG.info("Local tunneling socket failed to accept connection")
+                                logger?.info("Local tunneling socket failed to accept connection")
                             }
                             continue
                         }
                         launch(Dispatchers.IO) {
-                            LOG.debug("New connection established on local socket for tunneling")
+                            logger?.debug("New connection established on local socket for tunneling")
                             activeConnections.incrementAndGet()
                             try {
                                 val localWriteChannel = localSocket.openWriteChannel(true)
@@ -148,7 +146,7 @@ class PomeriumTunneler(
                                                     .with("Authorization", "Pomerium $auth")
                                                     .build(), null, null
                                             ).apply {
-                                                logDebug(
+                                                logger?.debug(
                                                     "Initializing tunnel by sending CONNECT for ${
                                                         formatConnectContext(
                                                             route,
@@ -168,7 +166,7 @@ class PomeriumTunneler(
                                             } catch (e: InvalidHttpResponse) {
                                                 //Expected if the remote socket is no longer active to return a bad response
                                                 if (!readChannel.isClosedForRead) {
-                                                    logWarn(
+                                                    logger?.debug(
                                                         "Invalid response from Pomerium for ${
                                                             formatConnectContext(
                                                                 route,
@@ -181,7 +179,7 @@ class PomeriumTunneler(
                                                         }: ${e.message}"
                                                     )
                                                 } else {
-                                                    logDebug(
+                                                    logger?.debug(
                                                         "Remote read channel closed during tunnel initialization for ${
                                                             formatConnectContext(
                                                                 route,
@@ -200,7 +198,7 @@ class PomeriumTunneler(
 
                                             when (response.statusCode) {
                                                 200 -> {
-                                                    logInfo(
+                                                    logger?.info(
                                                         "Pomerium tunnel established for ${
                                                             formatConnectContext(
                                                                 route,
@@ -245,22 +243,14 @@ class PomeriumTunneler(
                                                 }
 
                                                 301, 302, 307, 308 -> {
-                                                    LOG.info("Pomerium token expired. Refreshing...")
+                                                    logger?.info("Pomerium token expired. Refreshing...")
                                                     onStateChange(PomeriumTunnelState.RefreshingAuthorization)
                                                     authProvider.invalidate(route)
                                                     shouldRetry = true
                                                 }
 
                                                 503 -> {
-                                                    logPomeriumUnavailable(
-                                                        phase = "tunnel",
-                                                        route = route,
-                                                        pomeriumHost = pomeriumHost,
-                                                        pomeriumPort = pomeriumPort,
-                                                        useTls = useTls,
-                                                        response = response,
-                                                        retryDelay = "30s"
-                                                    )
+                                                    logger?.info("pomerium unavailable: phase=tunnel, retryDelay=30s")
                                                     onStateChange(PomeriumTunnelState.PomeriumUnavailable)
                                                     delay(30.seconds)
                                                     shouldRetry = true
@@ -271,7 +261,7 @@ class PomeriumTunneler(
                                                     val body = response.body.getOrNull().use {
                                                         it?.asRawString(Charset.defaultCharset())
                                                     }
-                                                    LOG.error("Unknown status code returned from Pomerium: ${response.statusCode} message: $body")
+                                                    logger?.error("Unknown status code returned from Pomerium: ${response.statusCode} message: $body")
                                                     onStateChange(PomeriumTunnelState.PomeriumTunnelCreationError)
                                                 }
                                             }
@@ -292,7 +282,7 @@ class PomeriumTunneler(
                                     }
 
                                     is UnresolvedAddressException -> delay(1.seconds)
-                                    else -> LOG.error("Exception occurred during local tunneling", e)
+                                    else -> logger?.error("Exception occurred during local tunneling")
                                 }
                             } finally {
                                 withContext(NonCancellable) {
@@ -319,7 +309,7 @@ class PomeriumTunneler(
                 }
                 tunnelJobs.remove(route, tunnelJob)
                 if (e != null && e !is CancellationException) {
-                    LOG.error("Unhandled exception in tunneling coroutine", e)
+                    logger?.error("Unhandled exception in tunneling coroutine")
                 }
             }
             tunnelJobs[route] = tunnelJob
@@ -362,7 +352,7 @@ class PomeriumTunneler(
     private suspend fun Socket.configure(useTls: Boolean, serverName: String, trustManager: TrustManager?): Socket {
         return if (useTls) {
             val handler = CoroutineExceptionHandler { _, throwable ->
-                LOG.error("Exception in the tunnel TLS translation", throwable)
+                logger?.error("Exception in the tunnel TLS translation")
             }
             val effectiveTrustManager = when {
                 allowInsecureLocalhostTls && isLocalhost(serverName) -> insecureLocalhostTrustManager
@@ -450,7 +440,7 @@ class PomeriumTunneler(
                         RawHttp().parseResponse(inputStream)
                     } catch (e: InvalidHttpResponse) {
                         if (!readChannel.isClosedForRead) {
-                            logWarn(
+                            logger?.debug(
                                 "Invalid response from Pomerium during preflight for ${
                                     formatConnectContext(
                                         route,
@@ -467,7 +457,7 @@ class PomeriumTunneler(
 
                     when (response.statusCode) {
                         200 -> {
-                            logDebug(
+                            logger?.debug(
                                 "Pomerium preflight CONNECT succeeded for ${
                                     formatConnectContext(
                                         route,
@@ -481,21 +471,13 @@ class PomeriumTunneler(
                             ConnectProbeResult.Ready
                         }
                         301, 302, 307, 308 -> {
-                            LOG.info("Pomerium token expired during preflight. Refreshing...")
+                            logger?.info("Pomerium token expired during preflight. Refreshing...")
                             onStateChange(PomeriumTunnelState.RefreshingAuthorization)
                             authProvider.invalidate(route)
                             ConnectProbeResult.RetryShort
                         }
                         503 -> {
-                            logPomeriumUnavailable(
-                                phase = "preflight",
-                                route = route,
-                                pomeriumHost = pomeriumHost,
-                                pomeriumPort = pomeriumPort,
-                                useTls = useTls,
-                                response = response,
-                                retryDelay = "1s"
-                            )
+                            logger?.info("pomerium unavailable: phase=preflight, retryDelay=1s")
                             onStateChange(PomeriumTunnelState.PomeriumUnavailable)
                             ConnectProbeResult.RetryLong
                         }
@@ -518,50 +500,13 @@ class PomeriumTunneler(
     private fun handleException(e: Throwable?) {
         if (e != null) {
             when (e) {
-                is IOException -> LOG.debug("IO exception during pomerium tunneling")
+                is IOException -> logger?.debug("IO exception during pomerium tunneling")
                 is ClosedSendChannelException, is CancellationException -> { /*Do nothing for this case*/
                 }
 
-                else -> LOG.error("Exception while tunneling traffic", e)
+                else -> logger?.error("Exception while tunneling traffic")
             }
         }
-    }
-
-    private fun logDebug(message: String) {
-        logger?.debug(message)
-        LOG.debug(message)
-    }
-
-    private fun logInfo(message: String) {
-        logger?.info(message)
-        LOG.info(message)
-    }
-
-    private fun logWarn(message: String) {
-        logger?.warn(message)
-        LOG.warn(message)
-    }
-
-    private fun logPomeriumUnavailable(
-        phase: String,
-        route: URI,
-        pomeriumHost: String,
-        pomeriumPort: Int,
-        useTls: Boolean,
-        response: RawHttpResponse<*>,
-        retryDelay: String,
-    ) {
-        val retryAfter = response.headers.get("Retry-After").firstOrNull()
-        val intercepted = response.headers.get("x-pomerium-intercepted-response").firstOrNull()
-        val location = response.headers.get("location").firstOrNull()
-        val requestId = response.headers.get("x-request-id").firstOrNull()
-        val contentType = response.headers.get("content-type").firstOrNull()
-        val body = response.readBodySummary()
-        logWarn(
-            "Pomerium returned 503 for ${
-                formatConnectContext(route, pomeriumHost, pomeriumPort, useTls, phase)
-            }. retryDelay=$retryDelay, retryAfterHeader=${retryAfter ?: "<missing>"}, intercepted=${intercepted ?: "<missing>"}, location=${location ?: "<missing>"}, requestId=${requestId ?: "<missing>"}, contentType=${contentType ?: "<missing>"}, responseBody=$body"
-        )
     }
 
     private fun formatConnectContext(
@@ -579,30 +524,6 @@ class PomeriumTunneler(
             else -> ", attempt=$attempt/$maxAttempts"
         }
         return "phase=$phase, route=$route, pomeriumEndpoint=$pomeriumHost:$pomeriumPort, useTls=$useTls$attemptPart"
-    }
-
-    private fun RawHttpResponse<*>.readBodySummary(limit: Int = 512): String {
-        val rawBody = try {
-            body.getOrNull().use {
-                it?.asRawString(Charset.defaultCharset())
-            }
-        } catch (e: Exception) {
-            return "<failed to read body: ${e.javaClass.simpleName}: ${e.message}>"
-        } ?: return "<empty>"
-
-        val normalized = rawBody.replace(Regex("\\s+"), " ").trim()
-        if (normalized.isEmpty()) {
-            return "<blank>"
-        }
-        return if (normalized.length <= limit) {
-            normalized
-        } else {
-            normalized.take(limit) + "...(truncated)"
-        }
-    }
-
-    companion object {
-        private val LOG = LoggerFactory.getLogger(PomeriumTunneler::class.java.name)
     }
 
     private data class ActiveTunnel(

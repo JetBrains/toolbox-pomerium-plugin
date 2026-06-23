@@ -117,7 +117,6 @@ class PomeriumRemoteProvider(
         &agentConnectionUrl=https%3A%2F%2Flocalhost%3A44000
         &agentAuth=319999dd35457fc53be9235929ee5ea2
 */
-        logger.info("Handling new url: $uri")
         val paramSource = when {
             !uri.rawFragment.isNullOrBlank() -> uri.rawFragment
             !uri.rawQuery.isNullOrBlank() -> uri.rawQuery
