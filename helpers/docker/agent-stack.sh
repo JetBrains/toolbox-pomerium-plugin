@@ -29,7 +29,7 @@ CLIENT_POMERIUM_ROUTE="${CLIENT_POMERIUM_ROUTE:-}"
 CONNECTION_KEY="${CONNECTION_KEY:-https%3A%2F%2Fbackend.localhost%3A5990%23jt%3Dca7cd969-f4dc-4d58-bdad-3ab4f3f9e8d6%26p%3DIU%26fp%3DE80F9EA7A46A357ED269F7F9F7E628F0A70BB6251A69E96F86DB658A96029140%26cb%3D${CONNECTION_KEY_BUILD}%26newUi%3Dtrue%26jb%3D21.0.10b1163.110}"
 POMERIUM_PORT="${POMERIUM_PORT:-}"
 DISPLAY_NAME="${DISPLAY_NAME:-}"
-AGENT_CONNECTION_URL="${AGENT_CONNECTION_URL:-}"
+AGENT_POMERIUM_ROUTE="${AGENT_POMERIUM_ROUTE:-}"
 POMERIUM_STACK_MODE="${POMERIUM_STACK_MODE:-mock}"
 # Toolbox mode keeps using the bridge-only setup by default.
 # Toolbox-dev can opt into direct 0.0.0.0:44000 via TOOLBOX_MODE=toolbox-dev.
@@ -45,12 +45,12 @@ apply_pomerium_mode_defaults() {
     real)
       : "${CLIENT_POMERIUM_ROUTE:=https%3A%2F%2Fbackend.localhost%3A443}"
       : "${POMERIUM_PORT:=443}"
-      : "${AGENT_CONNECTION_URL:=https%3A%2F%2Fagent.localhost%3A443}"
+      : "${AGENT_POMERIUM_ROUTE:=https%3A%2F%2Fagent.localhost%3A443}"
       ;;
     *)
       : "${CLIENT_POMERIUM_ROUTE:=https%3A%2F%2Fbackend.localhost%3A443}"
       : "${POMERIUM_PORT:=443}"
-      : "${AGENT_CONNECTION_URL:=https%3A%2F%2Flocalhost%3A44000}"
+      : "${AGENT_POMERIUM_ROUTE:=https%3A%2F%2Flocalhost%3A44000}"
       ;;
   esac
 }
@@ -438,7 +438,7 @@ print_outputs() {
   apply_display_name_override
   ensure_display_name
   ensure_agent_stack_ready
-  python3 - <<'PY' "$AGENT_INFO" "$FORWARD_AGENT_INFO" "$TBCLI_VERSION" "$TB_CLI_PATH" "$PORT_FILE" "$LINK_FILE" "$CLIENT_POMERIUM_ROUTE" "$CONNECTION_KEY" "$POMERIUM_PORT" "$DISPLAY_NAME" "$AGENT_CONNECTION_URL" "$PROJECT_PATH"
+  python3 - <<'PY' "$AGENT_INFO" "$FORWARD_AGENT_INFO" "$TBCLI_VERSION" "$TB_CLI_PATH" "$PORT_FILE" "$LINK_FILE" "$CLIENT_POMERIUM_ROUTE" "$CONNECTION_KEY" "$POMERIUM_PORT" "$DISPLAY_NAME" "$AGENT_POMERIUM_ROUTE" "$PROJECT_PATH"
 import json
 import sys
 from urllib.parse import quote
@@ -459,7 +459,7 @@ if sys.argv[10]:
 if sys.argv[12]:
     link += f"&projectPath={sys.argv[12]}"
 link += (
-    f"&agentConnectionUrl={sys.argv[11]}"
+    f"&agentPomeriumRoute={sys.argv[11]}"
     f"&agentAuth={agent_auth}"
 )
 
@@ -497,7 +497,7 @@ print_link_only() {
   apply_display_name_override
   ensure_display_name
   ensure_agent_stack_ready
-  python3 - <<'PY' "$AGENT_INFO" "$LINK_FILE" "$CLIENT_POMERIUM_ROUTE" "$CONNECTION_KEY" "$POMERIUM_PORT" "$DISPLAY_NAME" "$AGENT_CONNECTION_URL" "$PROJECT_PATH"
+  python3 - <<'PY' "$AGENT_INFO" "$LINK_FILE" "$CLIENT_POMERIUM_ROUTE" "$CONNECTION_KEY" "$POMERIUM_PORT" "$DISPLAY_NAME" "$AGENT_POMERIUM_ROUTE" "$PROJECT_PATH"
 import json
 import sys
 from urllib.parse import quote
@@ -517,7 +517,7 @@ if sys.argv[6]:
 if sys.argv[8]:
     link += f"&projectPath={sys.argv[8]}"
 link += (
-    f"&agentConnectionUrl={sys.argv[7]}"
+    f"&agentPomeriumRoute={sys.argv[7]}"
     f"&agentAuth={agent_auth}"
 )
 

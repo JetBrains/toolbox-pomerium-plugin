@@ -169,7 +169,7 @@ POMERIUM_INSTANCE=""
 DISPLAY_NAME=""
 PROJECT_PATH="${PROJECT_PATH:-${CONTAINER_PROJECT_DIR:-}}"
 TOOLBOX_MODE="${TOOLBOX_MODE:-toolbox}"
-AGENT_CONNECTION_URL="https://agent.localhost:443"
+AGENT_POMERIUM_ROUTE="https://agent.localhost:443"
 TARGET_CONNECTION_BUILD="${CONNECTION_KEY_BUILD:-261.24374.151}"
 CONNECTION_KEY="https://backend.localhost:5990#jt=ca7cd969-f4dc-4d58-bdad-3ab4f3f9e8d6&p=IU&fp=E80F9EA7A46A357ED269F7F9F7E628F0A70BB6251A69E96F86DB658A96029140&cb=${TARGET_CONNECTION_BUILD}&newUi=true&jb=21.0.10b1163.110"
 AGENT_AUTH=""
@@ -182,7 +182,7 @@ if [[ -n "$existing_defaults" ]]; then
   DISPLAY_NAME="$(defaults_get "$existing_defaults" "DISPLAY_NAME" 2>/dev/null || printf '%s\n' "$DISPLAY_NAME")"
   PROJECT_PATH="$(defaults_get "$existing_defaults" "PROJECT_PATH" 2>/dev/null || printf '%s\n' "$PROJECT_PATH")"
   TOOLBOX_MODE="$(defaults_get "$existing_defaults" "TOOLBOX_MODE" 2>/dev/null || printf '%s\n' "$TOOLBOX_MODE")"
-  AGENT_CONNECTION_URL="$(defaults_get "$existing_defaults" "AGENT_CONNECTION_URL" 2>/dev/null || printf '%s\n' "$AGENT_CONNECTION_URL")"
+  AGENT_POMERIUM_ROUTE="$(defaults_get "$existing_defaults" "AGENT_POMERIUM_ROUTE" 2>/dev/null || printf '%s\n' "$AGENT_POMERIUM_ROUTE")"
   CONNECTION_KEY="$(defaults_get "$existing_defaults" "CONNECTION_KEY" 2>/dev/null || printf '%s\n' "$CONNECTION_KEY")"
   AGENT_AUTH="$(defaults_get "$existing_defaults" "AGENT_AUTH" 2>/dev/null || printf '%s\n' "$AGENT_AUTH")"
   AGENT_TCP_LISTEN_ON_PORT="$(defaults_get "$existing_defaults" "AGENT_TCP_LISTEN_ON_PORT" 2>/dev/null || printf '%s\n' "$AGENT_TCP_LISTEN_ON_PORT")"
@@ -195,8 +195,8 @@ fi
 
 [[ -n "$CLIENT_POMERIUM_ROUTE" ]] || CLIENT_POMERIUM_ROUTE="https://backend.localhost:443"
 [[ -n "$POMERIUM_PORT" ]] || POMERIUM_PORT="443"
-[[ -n "$AGENT_CONNECTION_URL" ]] || DISPLAY_NAME=""
-AGENT_CONNECTION_URL="https://agent.localhost:443"
+[[ -n "$AGENT_POMERIUM_ROUTE" ]] || DISPLAY_NAME=""
+AGENT_POMERIUM_ROUTE="https://agent.localhost:443"
 CLIENT_POMERIUM_ROUTE="$(normalize_backend_route "$CLIENT_POMERIUM_ROUTE")"
 [[ -n "$CONNECTION_KEY" ]] || CONNECTION_KEY="https://backend.localhost:5990#jt=ca7cd969-f4dc-4d58-bdad-3ab4f3f9e8d6&p=IU&fp=E80F9EA7A46A357ED269F7F9F7E628F0A70BB6251A69E96F86DB658A96029140&cb=${TARGET_CONNECTION_BUILD}&newUi=true&jb=21.0.10b1163.110"
 CONNECTION_KEY="$(normalize_connection_key "$CONNECTION_KEY" "$TARGET_CONNECTION_BUILD")"
@@ -306,14 +306,14 @@ fi
 if [[ -n "$PROJECT_PATH" ]]; then
   generated_link="${generated_link}&projectPath=$PROJECT_PATH"
 fi
-generated_link="${generated_link}&agentConnectionUrl=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$AGENT_CONNECTION_URL")&agentAuth=$AGENT_AUTH"
+generated_link="${generated_link}&agentPomeriumRoute=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$AGENT_POMERIUM_ROUTE")&agentAuth=$AGENT_AUTH"
 
 CLIENT_POMERIUM_ROUTE="$(parse_link_field "$generated_link" "clientPomeriumRoute" 2>/dev/null || printf '%s\n' "$CLIENT_POMERIUM_ROUTE")"
 POMERIUM_PORT="$(parse_link_field "$generated_link" "pomeriumPort" 2>/dev/null || printf '%s\n' "$POMERIUM_PORT")"
 POMERIUM_INSTANCE="$(parse_link_field "$generated_link" "pomeriumInstance" 2>/dev/null || printf '%s\n' "$POMERIUM_INSTANCE")"
 DISPLAY_NAME="$(parse_link_field "$generated_link" "displayName" 2>/dev/null || printf '%s\n' "$DISPLAY_NAME")"
 PROJECT_PATH="$(parse_link_field "$generated_link" "projectPath" 2>/dev/null || printf '%s\n' "$PROJECT_PATH")"
-AGENT_CONNECTION_URL="$(parse_link_field "$generated_link" "agentConnectionUrl" 2>/dev/null || printf '%s\n' "$AGENT_CONNECTION_URL")"
+AGENT_POMERIUM_ROUTE="$(parse_link_field "$generated_link" "agentPomeriumRoute" 2>/dev/null || printf '%s\n' "$AGENT_POMERIUM_ROUTE")"
 CONNECTION_KEY="$(parse_link_field "$generated_link" "connectionKey" 2>/dev/null || printf '%s\n' "$CONNECTION_KEY")"
 AGENT_AUTH="$(parse_link_field "$generated_link" "agentAuth" 2>/dev/null || printf '%s\n' "$AGENT_AUTH")"
 
@@ -324,7 +324,7 @@ POMERIUM_PORT=$(quote_shell "$POMERIUM_PORT")
 POMERIUM_INSTANCE=$(quote_shell "$POMERIUM_INSTANCE")
 DISPLAY_NAME=$(quote_shell "$DISPLAY_NAME")
 PROJECT_PATH=$(quote_shell "$PROJECT_PATH")
-AGENT_CONNECTION_URL=$(quote_shell "$AGENT_CONNECTION_URL")
+AGENT_POMERIUM_ROUTE=$(quote_shell "$AGENT_POMERIUM_ROUTE")
 CONNECTION_KEY=$(quote_shell "$CONNECTION_KEY")
 AGENT_AUTH=$(quote_shell "$AGENT_AUTH")
 AGENT_TCP_LISTEN_ON_PORT=$(quote_shell "$AGENT_TCP_LISTEN_ON_PORT")

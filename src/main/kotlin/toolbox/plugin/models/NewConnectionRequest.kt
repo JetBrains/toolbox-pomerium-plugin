@@ -8,6 +8,6 @@ data class NewConnectionRequest(
     val projectPath: String?,
     val productCode: String?,
     val buildNumber: String?,
-    val agentConnectionUrl: String,
+    val agentPomeriumRoute: String,
     val agentAuth: String,
 )

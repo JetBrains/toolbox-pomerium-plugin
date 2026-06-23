@@ -12,7 +12,7 @@ Link shape:
 - `clientPomeriumRoute` = backend route through Pomerium, usually `https://backend.localhost:443`
 - `connectionKey` = raw backend listener plus IDE metadata, usually `https://backend.localhost:5990#...`
 - `displayName` = optional label shown in Toolbox
-- `agentConnectionUrl` = agent route through Pomerium, usually `https://agent.localhost:443`
+- `agentPomeriumRoute` = agent route through Pomerium, usually `https://agent.localhost:443`
 - `agentAuth` = live token from `tbcli agent`
 
 Start here:

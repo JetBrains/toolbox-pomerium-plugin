@@ -53,7 +53,7 @@ keys = [
     "POMERIUM_INSTANCE",
     "DISPLAY_NAME",
     "PROJECT_PATH",
-    "AGENT_CONNECTION_URL",
+    "AGENT_POMERIUM_ROUTE",
     "CONNECTION_KEY",
     "AGENT_AUTH",
     "AGENT_TCP_LISTEN_ON_PORT",
@@ -185,13 +185,13 @@ generate_link() {
   local pomerium_instance="$3"
   local display_name="$4"
   local project_path="$5"
-  local agent_connection_url="$6"
+  local agent_pomerium_route="$6"
   local connection_key_raw="$7"
   local agent_auth="$8"
 
-  local client_pomerium_route_encoded agent_connection_url_encoded connection_key_encoded
+  local client_pomerium_route_encoded agent_pomerium_route_encoded connection_key_encoded
   client_pomerium_route_encoded="$(urlencode "$client_pomerium_route")"
-  agent_connection_url_encoded="$(urlencode "$agent_connection_url")"
+  agent_pomerium_route_encoded="$(urlencode "$agent_pomerium_route")"
   connection_key_encoded="$(urlencode "$connection_key_raw")"
 
   local link
@@ -205,7 +205,7 @@ generate_link() {
   if [[ -n "$project_path" ]]; then
     link="${link}&projectPath=${project_path}"
   fi
-  link="${link}&agentConnectionUrl=${agent_connection_url_encoded}&agentAuth=${agent_auth}"
+  link="${link}&agentPomeriumRoute=${agent_pomerium_route_encoded}&agentAuth=${agent_auth}"
   printf '%s\n' "$link"
 }
 
@@ -222,7 +222,7 @@ main() {
       POMERIUM_INSTANCE=*) POMERIUM_INSTANCE="${defaults_line#POMERIUM_INSTANCE=}" ;;
       DISPLAY_NAME=*) DISPLAY_NAME="${defaults_line#DISPLAY_NAME=}" ;;
       PROJECT_PATH=*) PROJECT_PATH="${defaults_line#PROJECT_PATH=}" ;;
-      AGENT_CONNECTION_URL=*) AGENT_CONNECTION_URL="${defaults_line#AGENT_CONNECTION_URL=}" ;;
+      AGENT_POMERIUM_ROUTE=*) AGENT_POMERIUM_ROUTE="${defaults_line#AGENT_POMERIUM_ROUTE=}" ;;
       CONNECTION_KEY=*) CONNECTION_KEY="${defaults_line#CONNECTION_KEY=}" ;;
       AGENT_AUTH=*) AGENT_AUTH="${defaults_line#AGENT_AUTH=}" ;;
       AGENT_TCP_LISTEN_ON_PORT=*) AGENT_TCP_LISTEN_ON_PORT="${defaults_line#AGENT_TCP_LISTEN_ON_PORT=}" ;;
@@ -249,7 +249,7 @@ main() {
   local pomerium_instance_default="${POMERIUM_INSTANCE:-}"
   local display_name_default="${DISPLAY_NAME:-}"
   local project_path_default="${PROJECT_PATH:-${CONTAINER_PROJECT_DIR:-/home/dev/projects/test_project}}"
-  local agent_url_default="${AGENT_CONNECTION_URL:-https://agent.localhost:443}"
+  local agent_route_default="${AGENT_POMERIUM_ROUTE:-https://agent.localhost:443}"
   local connection_key_build="${CONNECTION_KEY_BUILD:-261.24374.151}"
   local connection_key_default="${CONNECTION_KEY:-https://backend.localhost:5990#jt=ca7cd969-f4dc-4d58-bdad-3ab4f3f9e8d6&p=IU&fp=E80F9EA7A46A357ED269F7F9F7E628F0A70BB6251A69E96F86DB658A96029140&cb=${connection_key_build}&newUi=true&jb=21.0.10b1163.110}"
   local agent_auth_file_default="${AGENT_AUTH:-}"
@@ -273,11 +273,11 @@ main() {
   printf '  identity: displayName (optional)\n'
   printf '  project: projectPath (optional)\n'
   printf '  backend: connectionKey\n'
-  printf '  agent: agentConnectionUrl, agentAuth\n'
+  printf '  agent: agentPomeriumRoute, agentAuth\n'
   printf '  runtime: agent tcp port, agent forwarder port, backend relay port\n'
   printf '\n'
 
-  local client_pomerium_route pomerium_port pomerium_instance display_name project_path agent_connection_url connection_key_raw agent_auth agent_tcp_listen_on_port agent_forward_port backend_forward_port
+  local client_pomerium_route pomerium_port pomerium_instance display_name project_path agent_pomerium_route connection_key_raw agent_auth agent_tcp_listen_on_port agent_forward_port backend_forward_port
   local toolbox_mode
   toolbox_mode="$(prompt_default "toolboxMode (toolbox or toolbox-dev)" "$toolbox_mode_default")"
   client_pomerium_route="$(prompt_default "clientPomeriumRoute" "$client_pomerium_route_default")"
@@ -285,7 +285,7 @@ main() {
   pomerium_instance="$(prompt_default "pomeriumInstance (optional, leave empty if not needed)" "$pomerium_instance_default")"
   display_name="$(prompt_default "displayName (optional, label shown in Toolbox)" "$display_name_default")"
   project_path="$(prompt_default "projectPath (optional, path inside remote/container IDE host)" "$project_path_default")"
-  agent_connection_url="$(prompt_default "agentConnectionUrl" "$agent_url_default")"
+  agent_pomerium_route="$(prompt_default "agentPomeriumRoute" "$agent_route_default")"
   connection_key_raw="$(prompt_default "connectionKey" "$connection_key_default")"
   agent_auth="$(prompt_default "agentAuth" "$agent_auth_default")"
   agent_tcp_listen_on_port="$(prompt_default "agentTcpListenOnPort (optional, leave empty for automatic)" "$agent_port_default")"
@@ -296,7 +296,7 @@ main() {
   connection_key_raw="$(normalize_connection_key "$connection_key_raw" "$connection_key_build")"
 
   local link
-  link="$(generate_link "$client_pomerium_route" "$pomerium_port" "$pomerium_instance" "$display_name" "$project_path" "$agent_connection_url" "$connection_key_raw" "$agent_auth")"
+  link="$(generate_link "$client_pomerium_route" "$pomerium_port" "$pomerium_instance" "$display_name" "$project_path" "$agent_pomerium_route" "$connection_key_raw" "$agent_auth")"
 
   printf '\n'
   log "Summary"
@@ -308,7 +308,7 @@ main() {
   fi
   printf '  displayName: %s\n' "${display_name:-<empty>}"
   printf '  projectPath: %s\n' "${project_path:-<empty>}"
-  printf '  agentConnectionUrl: %s\n' "$agent_connection_url"
+  printf '  agentPomeriumRoute: %s\n' "$agent_pomerium_route"
   printf '  connectionKey: %s\n' "$connection_key_raw"
   printf '  agentAuth: %s\n' "${agent_auth:-<empty>}"
   printf '  agentTcpListenOnPort: %s\n' "${agent_tcp_listen_on_port:-<automatic>}"
@@ -322,7 +322,7 @@ POMERIUM_PORT=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "
 POMERIUM_INSTANCE=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$pomerium_instance")
 DISPLAY_NAME=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$display_name")
 PROJECT_PATH=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$project_path")
-AGENT_CONNECTION_URL=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$agent_connection_url")
+AGENT_POMERIUM_ROUTE=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$agent_pomerium_route")
 CONNECTION_KEY=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$connection_key_raw")
 AGENT_AUTH=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$agent_auth")
 AGENT_TCP_LISTEN_ON_PORT=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$agent_tcp_listen_on_port")

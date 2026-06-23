@@ -82,7 +82,7 @@ class PomeriumRemoteProvider(
         SvgIcon.IconType.Default
     )
 
-    override val canCreateNewEnvironments: Boolean = true
+    override val canCreateNewEnvironments: Boolean = false
     override val isSingleEnvironment: Boolean = false
 
     override fun setVisible(visibilityState: ProviderVisibilityState) {}
@@ -112,7 +112,7 @@ class PomeriumRemoteProvider(
                 &newUi=true
                 &jb=21.0.10b1163.110
                 &remoteId=
-        &agentConnectionUrl=https%3A%2F%2Flocalhost%3A44000
+        &agentPomeriumRoute=https%3A%2F%2Flocalhost%3A44000
         &agentAuth=319999dd35457fc53be9235929ee5ea2
 */
         val paramSource = when {
@@ -132,7 +132,7 @@ class PomeriumRemoteProvider(
                 "p",
                 "cb",
                 "connectionKey",
-                "agentConnectionUrl",
+                "agentPomeriumRoute",
                 "agentAuth"
             )
         )
@@ -149,8 +149,8 @@ class PomeriumRemoteProvider(
                 projectPath = metadata.projectPath,
                 productCode = metadata.productCode,
                 buildNumber = metadata.buildNumber,
-                agentConnectionUrl = decodeUriIfNeeded(
-                    params["agentConnectionUrl"] ?: error("Missing agent connectionKey")
+                agentPomeriumRoute = decodeUriIfNeeded(
+                    params["agentPomeriumRoute"] ?: error("Missing agentPomeriumRoute")
                 ),
                 agentAuth = params["agentAuth"]?.let(::decodeUriIfNeeded)?.trim()
                     ?: error("Missing agent connectionAuth"),
@@ -179,7 +179,7 @@ class PomeriumRemoteProvider(
             environmentName,
             clientRoute.toString(),
             clientRoute.toString(),
-            request.agentConnectionUrl,
+            request.agentPomeriumRoute,
             request.agentAuth,
             link,
             tunneler,

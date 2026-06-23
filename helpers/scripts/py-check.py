@@ -41,12 +41,12 @@ def parse_link(link: str):
     parsed = urllib.parse.urlparse(link)
     fragment = urllib.parse.parse_qs(parsed.fragment, keep_blank_values=True)
     agent_auth = fragment.get("agentAuth", [""])[0]
-    agent_connection_url = fragment.get("agentConnectionUrl", [""])[0]
+    agent_pomerium_route = fragment.get("agentPomeriumRoute", [""])[0]
     if not agent_auth:
         raise ValueError("link does not contain agentAuth")
-    if not agent_connection_url:
-        raise ValueError("link does not contain agentConnectionUrl")
-    endpoint = urllib.parse.urlparse(urllib.parse.unquote(agent_connection_url))
+    if not agent_pomerium_route:
+        raise ValueError("link does not contain agentPomeriumRoute")
+    endpoint = urllib.parse.urlparse(urllib.parse.unquote(agent_pomerium_route))
     return agent_auth, endpoint
 
 

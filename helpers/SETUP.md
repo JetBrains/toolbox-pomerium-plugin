@@ -151,7 +151,7 @@ The helper asks for:
 - `pomeriumPort`
 - `pomeriumInstance`
 - `displayName`
-- `agentConnectionUrl`
+- `agentPomeriumRoute`
 - `connectionKey`
 - `agentAuth`
 - `agentTcpListenOnPort`
@@ -240,7 +240,7 @@ The generated deep link intentionally mixes two kinds of backend addressing:
 - `displayName`
   - optional display label shown in Toolbox
 
-- `agentConnectionUrl`
+- `agentPomeriumRoute`
   - top-level Pomerium route for the Toolbox Agent
   - default: `https://agent.localhost:443`
 
@@ -253,7 +253,7 @@ In other words:
 clientPomeriumRoute = backend route through Pomerium
 connectionKey        = raw backend listener + IDE metadata
 displayName         = optional environment label
-agentConnectionUrl   = agent route through Pomerium
+agentPomeriumRoute   = agent route through Pomerium
 agentAuth            = live agent token
 ```
 

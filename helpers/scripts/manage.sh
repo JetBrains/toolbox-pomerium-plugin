@@ -945,14 +945,14 @@ parsed = urllib.parse.urlparse(link)
 fragment = urllib.parse.parse_qs(parsed.fragment, keep_blank_values=True)
 
 client_pomerium_route = fragment.get("clientPomeriumRoute", [""])[0]
-agent_connection_url = fragment.get("agentConnectionUrl", [""])[0]
+agent_pomerium_route = fragment.get("agentPomeriumRoute", [""])[0]
 agent_auth = fragment.get("agentAuth", [""])[0]
 
 missing = []
 if not client_pomerium_route:
     missing.append("clientPomeriumRoute")
-if not agent_connection_url:
-    missing.append("agentConnectionUrl")
+if not agent_pomerium_route:
+    missing.append("agentPomeriumRoute")
 if not agent_auth:
     missing.append("agentAuth")
 
@@ -960,13 +960,13 @@ if missing:
     print(f"FAIL: real link is missing fields: {', '.join(missing)}")
     raise SystemExit(2)
 
-decoded = urllib.parse.unquote(agent_connection_url)
+decoded = urllib.parse.unquote(agent_pomerium_route)
 agent_url = urllib.parse.urlparse(decoded)
 host = agent_url.hostname
 port = agent_url.port or 443
 
 if not host:
-    print("FAIL: agentConnectionUrl does not contain a host")
+    print("FAIL: agentPomeriumRoute does not contain a host")
     raise SystemExit(3)
 
 connect_host = "127.0.0.1" if host.endswith(".localhost") or host == "localhost" else host
@@ -1101,9 +1101,9 @@ if auth_or_link.startswith("jetbrains://"):
         print("FAIL: link does not contain agentAuth")
         raise SystemExit(2)
 
-    agent_connection_url = fragment.get("agentConnectionUrl", [""])[0]
-    if agent_connection_url:
-        parsed_agent_url = urllib.parse.urlparse(urllib.parse.unquote(agent_connection_url))
+    agent_pomerium_route = fragment.get("agentPomeriumRoute", [""])[0]
+    if agent_pomerium_route:
+        parsed_agent_url = urllib.parse.urlparse(urllib.parse.unquote(agent_pomerium_route))
         scheme = (parsed_agent_url.scheme or "tcp").lower()
         host = parsed_agent_url.hostname or host
         port = parsed_agent_url.port or default_port
@@ -1176,12 +1176,12 @@ if not link.startswith("jetbrains://"):
 
 parsed = urllib.parse.urlparse(link)
 fragment = urllib.parse.parse_qs(parsed.fragment, keep_blank_values=True)
-agent_connection_url = fragment.get("agentConnectionUrl", [""])[0]
-if not agent_connection_url:
-    print("FAIL: link does not contain agentConnectionUrl")
+agent_pomerium_route = fragment.get("agentPomeriumRoute", [""])[0]
+if not agent_pomerium_route:
+    print("FAIL: link does not contain agentPomeriumRoute")
     raise SystemExit(3)
 
-parsed_agent_url = urllib.parse.urlparse(urllib.parse.unquote(agent_connection_url))
+parsed_agent_url = urllib.parse.urlparse(urllib.parse.unquote(agent_pomerium_route))
 host = parsed_agent_url.hostname or "127.0.0.1"
 port = parsed_agent_url.port or 44000
 scheme = (parsed_agent_url.scheme or "tcp").lower()

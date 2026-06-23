@@ -52,7 +52,7 @@ Parameters can be passed in fragment (`#...`) or query (`?...`), fragment is pre
 Required top-level params:
 - `clientPomeriumRoute` (example: `https://backend.localhost:443`, URL-encoded in link; this is the backend route through Pomerium)
 - `connectionKey` (raw Toolbox backend endpoint + fragment metadata, for example `https://backend.localhost:5990#...`)
-- `agentConnectionUrl` (HTTPS URL for agent connection through Pomerium)
+- `agentPomeriumRoute` (HTTPS URL for agent connection through Pomerium)
 - `agentAuth` (agent auth token)
 
 Optional top-level params:
@@ -64,7 +64,7 @@ Optional top-level params:
 Example:
 
 ```text
-jetbrains://remote-dev/jetbrains.toolbox.pomerium/new-environment#clientPomeriumRoute=https%3A%2F%2Fbackend.localhost%3A443&connectionKey=https%3A%2F%2Fbackend.localhost%3A5990%23jt%3Dabc%26p%3DIU%26cb%3D261.24374.151&displayName=My%20Dev%20Env&projectPath=/home/dev/projects/test_project&agentConnectionUrl=https%3A%2F%2Fagent.localhost%3A443&agentAuth=token
+jetbrains://remote-dev/jetbrains.toolbox.pomerium/new-environment#clientPomeriumRoute=https%3A%2F%2Fbackend.localhost%3A443&connectionKey=https%3A%2F%2Fbackend.localhost%3A5990%23jt%3Dabc%26p%3DIU%26cb%3D261.24374.151&displayName=My%20Dev%20Env&projectPath=/home/dev/projects/test_project&agentPomeriumRoute=https%3A%2F%2Fagent.localhost%3A443&agentAuth=token
 ```
 
 `connectionKey` format:
