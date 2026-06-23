@@ -8,11 +8,7 @@ import io.ktor.utils.io.jvm.javaio.*
 import kotlinx.coroutines.*
 import org.apache.http.client.methods.HttpGet
 import org.apache.http.impl.client.HttpClients
-import rawhttp.core.HttpVersion
-import rawhttp.core.RawHttp
-import rawhttp.core.RawHttpHeaders
-import rawhttp.core.RawHttpResponse
-import rawhttp.core.StatusLine
+import rawhttp.core.*
 import rawhttp.core.body.EagerBodyReader
 import toolbox.auth.PomeriumAuthProvider
 import kotlin.random.Random

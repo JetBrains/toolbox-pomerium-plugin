@@ -19,7 +19,6 @@ import java.io.IOException
 import java.net.URI
 import java.nio.charset.Charset
 import java.security.cert.X509Certificate
-import java.util.HashSet
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.TrustManager
@@ -59,7 +58,7 @@ class PomeriumTunneler(
         useTls: Boolean = true,
         ensureUpstreamReady: Boolean = false,
         onStateChange: (PomeriumTunnelState) -> Unit = {},
-        ): Int = withContext(Dispatchers.Default) {
+    ): Int = withContext(Dispatchers.Default) {
         routeLocks.computeIfAbsent(route) { Mutex() }.withLock {
             activeTunnels[route]?.let { existing ->
                 if (existing.job.isActive) {
@@ -72,7 +71,7 @@ class PomeriumTunneler(
                 tunnelJobs.remove(route, existing.job)
             }
 
-          //  onStateChange(PomeriumTunnelState.WaitingForAuthorization)
+            //  onStateChange(PomeriumTunnelState.WaitingForAuthorization)
             authProvider.getAuth(route, authScope).await() // Populate auth if required
             //onStateChange(PomeriumTunnelState.Connecting)
             if (ensureUpstreamReady) {
@@ -385,6 +384,7 @@ class PomeriumTunneler(
                     onStateChange(PomeriumTunnelState.UpstreamNotReady)
                     delay(preflightRetryShortDelay)
                 }
+
                 ConnectProbeResult.RetryLong -> {
                     // Preflight retry is still part of the initial tunnel creation.
                     // Emitting Reconnecting here makes Toolbox request another forwarded
@@ -470,17 +470,20 @@ class PomeriumTunneler(
                             )
                             ConnectProbeResult.Ready
                         }
+
                         301, 302, 307, 308 -> {
                             logger?.info("Pomerium token expired during preflight. Refreshing...")
                             onStateChange(PomeriumTunnelState.RefreshingAuthorization)
                             authProvider.invalidate(route)
                             ConnectProbeResult.RetryShort
                         }
+
                         503 -> {
                             logger?.info("pomerium unavailable: phase=preflight, retryDelay=1s")
                             onStateChange(PomeriumTunnelState.PomeriumUnavailable)
                             ConnectProbeResult.RetryLong
                         }
+
                         else -> {
                             val body = response.body.getOrNull().use {
                                 it?.asRawString(Charset.defaultCharset())
@@ -541,7 +544,8 @@ class PomeriumTunneler(
 }
 
 sealed class PomeriumTunnelException(message: String, cause: Throwable? = null) : Exception(message, cause)
-class PomeriumTunnelCreationException(message: String, cause: Throwable? = null) : PomeriumTunnelException(message, cause)
+class PomeriumTunnelCreationException(message: String, cause: Throwable? = null) :
+    PomeriumTunnelException(message, cause)
 
 sealed interface PomeriumTunnelState {
     data object WaitingForAuthorization : PomeriumTunnelState

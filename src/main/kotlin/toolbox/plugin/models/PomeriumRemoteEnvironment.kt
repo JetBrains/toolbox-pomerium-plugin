@@ -9,26 +9,12 @@ import com.jetbrains.toolbox.api.remoteDev.connection.RemoteToolsHelper
 import com.jetbrains.toolbox.api.remoteDev.environments.CachedIdeStub
 import com.jetbrains.toolbox.api.remoteDev.environments.CachedProject
 import com.jetbrains.toolbox.api.remoteDev.environments.EnvironmentContentsView
-import com.jetbrains.toolbox.api.remoteDev.states.CustomRemoteEnvironmentStateV2
-import com.jetbrains.toolbox.api.remoteDev.states.EnvironmentDescription
-import com.jetbrains.toolbox.api.remoteDev.states.EnvironmentStateColorPalette
-import com.jetbrains.toolbox.api.remoteDev.states.EnvironmentStateIcons
-import com.jetbrains.toolbox.api.remoteDev.states.RemoteEnvironmentState
-import com.jetbrains.toolbox.api.remoteDev.states.StandardRemoteEnvironmentState
+import com.jetbrains.toolbox.api.remoteDev.states.*
 import com.jetbrains.toolbox.api.ui.actions.ActionDescription
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
 import toolbox.auth.PomeriumTunnelState
 import toolbox.auth.PomeriumTunneler
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 import toolbox.plugin.PomeriumEnvironmentContentsView
 import java.io.Closeable
 import java.net.URI
@@ -99,7 +85,9 @@ class PomeriumEnvironment(
         logger.info("Environment URL: $clientRoute")
         logger.info("Environment '${id}': initial state ${EnvironmentState.Disconnected::class.simpleName}")
     }
-    override val description: MutableStateFlow<EnvironmentDescription> = MutableStateFlow(EnvironmentDescription.General(null))
+
+    override val description: MutableStateFlow<EnvironmentDescription> =
+        MutableStateFlow(EnvironmentDescription.General(null))
     override val connectionRequest: MutableSharedFlow<Boolean> = MutableSharedFlow(replay = 1)
     val environmentState: MutableStateFlow<EnvironmentState> = MutableStateFlow(EnvironmentState.Disconnected)
     override val nameFlow: MutableStateFlow<String>
@@ -128,7 +116,7 @@ class PomeriumEnvironment(
     }
 
     suspend fun connect(afterConnection: () -> Unit) {
-       // setEnvironmentState(EnvironmentState.Connecting)
+        // setEnvironmentState(EnvironmentState.Connecting)
         setEnvironmentState(EnvironmentState.Connected)
         connectionRequest.emit(true)
         afterConnection()
@@ -147,7 +135,8 @@ class PomeriumEnvironment(
 
     override fun setVisible(visibilityState: EnvironmentVisibilityState) {}
 
-    override val supportedFeatures = setOf(RemoteEnvironmentAbility.CAN_RENAME, RemoteEnvironmentAbility.ALWAYS_CONNECTED)
+    override val supportedFeatures =
+        setOf(RemoteEnvironmentAbility.CAN_RENAME, RemoteEnvironmentAbility.ALWAYS_CONNECTED)
 
     override val actionsList: StateFlow<List<ActionDescription>> = MutableStateFlow(emptyList())
 
@@ -167,6 +156,7 @@ class PomeriumEnvironment(
                     true,
                     EnvironmentStateIcons.Connecting,
                 )
+
                 EnvironmentState.Connected -> StandardRemoteEnvironmentState.Active
                 EnvironmentState.WaitingForAuthorization -> CustomRemoteEnvironmentStateV2(
                     i18n.ptrl("Waiting for authorization"),
@@ -174,54 +164,63 @@ class PomeriumEnvironment(
                     true,
                     EnvironmentStateIcons.Connecting,
                 )
+
                 EnvironmentState.RefreshingAuthorization -> CustomRemoteEnvironmentStateV2(
                     i18n.ptrl("Refreshing authorization"),
                     colorPalette.getColor(StandardRemoteEnvironmentState.Initializing),
                     true,
                     EnvironmentStateIcons.Connecting,
                 )
+
                 EnvironmentState.UpstreamNotReady -> CustomRemoteEnvironmentStateV2(
                     i18n.ptrl("Waiting for upstream"),
                     colorPalette.getColor(StandardRemoteEnvironmentState.Initializing),
                     true,
                     EnvironmentStateIcons.Connecting,
                 )
+
                 EnvironmentState.Reconnecting -> CustomRemoteEnvironmentStateV2(
                     i18n.ptrl("Reconnecting"),
                     colorPalette.getColor(StandardRemoteEnvironmentState.Initializing),
                     true,
                     EnvironmentStateIcons.Connecting,
                 )
+
                 EnvironmentState.AgentUnavailable -> CustomRemoteEnvironmentStateV2(
                     i18n.ptrl("Toolbox Agent is unavailable"),
                     colorPalette.getColor(StandardRemoteEnvironmentState.Unreachable),
                     false,
                     EnvironmentStateIcons.Offline,
                 )
+
                 EnvironmentState.AgentConnectionError -> CustomRemoteEnvironmentStateV2(
                     i18n.ptrl("Connection to remote end failed"),
                     colorPalette.getColor(StandardRemoteEnvironmentState.Error),
                     false,
                     EnvironmentStateIcons.Error,
                 )
+
                 EnvironmentState.AgentAuthorizationError -> CustomRemoteEnvironmentStateV2(
                     i18n.ptrl("Authorization failed"),
                     colorPalette.getColor(StandardRemoteEnvironmentState.Failed),
                     false,
                     EnvironmentStateIcons.Error,
                 )
+
                 EnvironmentState.PomeriumUnavailable -> CustomRemoteEnvironmentStateV2(
                     i18n.ptrl("Pomerium is unavailable"),
                     colorPalette.getColor(StandardRemoteEnvironmentState.Unreachable),
                     true,
                     EnvironmentStateIcons.Offline,
                 )
+
                 EnvironmentState.PomeriumAuthorizationError -> CustomRemoteEnvironmentStateV2(
                     i18n.ptrl("Authorization failed"),
                     colorPalette.getColor(StandardRemoteEnvironmentState.Failed),
                     true,
                     EnvironmentStateIcons.Error,
                 )
+
                 EnvironmentState.PomeriumTunnelCreationError -> CustomRemoteEnvironmentStateV2(
                     i18n.ptrl("Pomerium tunnel creation failed"),
                     colorPalette.getColor(StandardRemoteEnvironmentState.Error),

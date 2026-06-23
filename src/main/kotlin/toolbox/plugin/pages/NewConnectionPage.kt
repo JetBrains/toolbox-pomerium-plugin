@@ -50,12 +50,12 @@ class NewConnectionPage(tunneler: PomeriumTunneler, i18n: LocalizableStringFacto
 
         private fun createEnvironment() {
             val url = urlField.contentState.value
-            val name = nameField.contentState.value.ifBlank {  Random.nextLong().toString()}
+            val name = nameField.contentState.value.ifBlank { Random.nextLong().toString() }
             val agentUrl = agentField.contentState.value
             fun getUrl(): String {
                 return agentUrl
             }
-          //  val environment = PomeriumEnvironment(name, url, tunneler, logger, i18n, scope )
+            //  val environment = PomeriumEnvironment(name, url, tunneler, logger, i18n, scope )
             //environment.connectionRequest.tryEmit(true)
         }
 

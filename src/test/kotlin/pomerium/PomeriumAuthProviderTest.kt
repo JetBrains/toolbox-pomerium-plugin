@@ -32,7 +32,7 @@ class PomeriumAuthProviderTest {
         }
     }
 
-    object NoOpAuthLinkHandler: AuthLinkHandler {
+    object NoOpAuthLinkHandler : AuthLinkHandler {
         override fun handleAuthLink(getLink: () -> URI, newRoute: Boolean) {
             //Nothing
         }
@@ -86,7 +86,10 @@ class PomeriumAuthProviderTest {
         val authService = PomeriumAuthProvider(InMemoryCredStore(), NoOpAuthLinkHandler, server.port)
 
         val route = URI("http://localhost:${server.port}")
-        Assertions.assertEquals(authService.getAuth(route, backgroundScope), authService.getAuth(route, backgroundScope))
+        Assertions.assertEquals(
+            authService.getAuth(route, backgroundScope),
+            authService.getAuth(route, backgroundScope)
+        )
     }
 
     @Test
@@ -158,24 +161,24 @@ class PomeriumAuthProviderTest {
 
     @Test
     fun `test job stays running with original lifetime terminating`() = runTest {
-     /*   val server = MockWebServer()
-        server.enqueue(MockResponse().setBody("http://example.com"))
-        server.enqueue(MockResponse().setBody("http://example.com"))
-        server.start()
-        val route = URI("http://localhost:${server.port}")
+        /*   val server = MockWebServer()
+           server.enqueue(MockResponse().setBody("http://example.com"))
+           server.enqueue(MockResponse().setBody("http://example.com"))
+           server.start()
+           val route = URI("http://localhost:${server.port}")
 
-        val authService = PomeriumAuthProvider(InMemoryCredStore(), NoOpAuthLinkHandler, server.port)
-            //val lifetime1 = lifetime.createNested()
-        val job = authService.getAuth(route, lifetime1)
+           val authService = PomeriumAuthProvider(InMemoryCredStore(), NoOpAuthLinkHandler, server.port)
+               //val lifetime1 = lifetime.createNested()
+           val job = authService.getAuth(route, lifetime1)
 
-        val lifetime2 = lifetime.createNested()
-        authService.getAuth(route, lifetime2)
+           val lifetime2 = lifetime.createNested()
+           authService.getAuth(route, lifetime2)
 
-        lifetime1.terminate()
-        Assertions.assertTrue(job.isActive)
+           lifetime1.terminate()
+           Assertions.assertTrue(job.isActive)
 
-        lifetime2.terminate()
-        Assertions.assertFalse(job.isActive)*/
+           lifetime2.terminate()
+           Assertions.assertFalse(job.isActive)*/
     }
 
 

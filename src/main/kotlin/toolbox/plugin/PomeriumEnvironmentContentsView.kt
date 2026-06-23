@@ -126,10 +126,13 @@ class PomeriumBasedAgentConnectionHandle(
                     + Job(pluginScope.coroutineContext.job)
         )
     private val closed = AtomicBoolean(false)
+
     @Volatile
     private var agentSocket: Socket? = null
+
     @Volatile
     private var tunnelRoute: URI? = null
+
     @Volatile
     private var leaseRegistered = false
 
@@ -174,6 +177,7 @@ class PomeriumBasedAgentConnectionHandle(
             throw e
         }
     }
+
     override suspend fun close() {
         if (!closed.compareAndSet(false, true)) return
         val socket = agentSocket

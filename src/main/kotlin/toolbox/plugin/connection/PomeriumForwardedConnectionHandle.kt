@@ -27,8 +27,10 @@ class PomeriumForwardedConnectionHandle(
 ) : ForwardedConnectionHandle {
     private val connectionId = forwardedConnectionIdCounter.incrementAndGet()
     private val leaseId = "backend-$connectionId"
+
     @Volatile
     private var tunnelRoute: URI? = null
+
     @Volatile
     private var leaseRegistered = false
 
@@ -36,10 +38,10 @@ class PomeriumForwardedConnectionHandle(
         val route = normalizePomeriumRoute(URI(connectionInfo.url), useTls = true)
         logger.info(
             "Starting forwarded IDE tunnel. " +
-                "requestedRemote=${remoteAddress.hostAddress}:$remotePort, " +
-                "localAddress=${localAddress.hostAddress}, " +
-                "configuredRoute=${route}, " +
-                "pomeriumPort=${connectionInfo.pomeriumPort}"
+                    "requestedRemote=${remoteAddress.hostAddress}:$remotePort, " +
+                    "localAddress=${localAddress.hostAddress}, " +
+                    "configuredRoute=${route}, " +
+                    "pomeriumPort=${connectionInfo.pomeriumPort}"
         )
         tunnelRoute = route
         logger.info(

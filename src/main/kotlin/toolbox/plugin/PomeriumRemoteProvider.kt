@@ -28,12 +28,10 @@ import toolbox.auth.PomeriumAuthProvider
 import toolbox.auth.PomeriumTunneler
 import toolbox.auth.normalizePomeriumRoute
 import toolbox.plugin.models.*
-import toolbox.plugin.models.NewConnectionRequest
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import kotlin.random.Random
-import kotlin.collections.listOf
 
 enum class ConnectionVisiblePage { Login, Environment }
 class PomeriumRemoteProvider(
